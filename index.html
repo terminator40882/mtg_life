@@ -36,6 +36,8 @@
   .board{position:absolute;inset:0;background:var(--gutter)}
   #rows{position:absolute;inset:0;display:flex;flex-direction:column;gap:var(--gap);background:var(--gutter)}
   .row{flex:1;display:flex;gap:var(--gap);min-height:0}
+  /* clear central band that the coin lives in, so it never overlaps a box */
+  .coinrow{flex:0 0 calc(var(--coin) + 66px);min-height:0;pointer-events:none}
   .tile{
     flex:1;position:relative;overflow:hidden;min-width:0;
     background:var(--tile,#333);color:var(--fg,#fff);
@@ -103,7 +105,7 @@
     display:flex;flex-direction:column;align-items:center;justify-content:center;
     z-index:5;cursor:pointer;touch-action:none;
     box-shadow:0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
-    transition:border-color .25s ease, opacity .2s ease;
+    transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
   }
   .coin.hidden{opacity:0;pointer-events:none}
   /* arrow on the ring that rotates to point at the active player's tile,
@@ -357,8 +359,9 @@
   var seatOrder = [];   // clockwise list of player indices
   var seatRank = [];    // player index -> position within seatOrder
   function computeSeatOrder(){
-    var b = el.board.getBoundingClientRect();
-    var cx = b.left + b.width/2, cy = b.top + b.height/2;
+    // order seats by angle around the coin (the visual centre of the ring)
+    var c = el.coin.getBoundingClientRect();
+    var cx = c.left + c.width/2, cy = c.top + c.height/2;
     var arr = [];
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
@@ -416,18 +419,20 @@
   };
 
   // ---- layout ----------------------------------------------------------
-  // Tuned for a tall portrait phone (e.g. Galaxy S22): never put more than two
-  // tiles in a row, so no tile becomes a thin vertical sliver. Row heights are
-  // weighted by their column count in buildBoard() so every tile ends up with
-  // the same, as-square-as-possible aspect ratio.
-  function layoutFor(n){
+  // Boxes are arranged in rows around a central coin band, so the coin sits in
+  // its own clear space and the boxes ring it above and below. Each item is
+  // either the string "coin" (the central spacer) or an array of player indices
+  // forming one row (max two, to avoid thin slivers). Rows above the coin face
+  // the top edge (rotated 180). Row heights are weighted by their column count
+  // in buildBoard() so every box ends up with the same area.
+  function layoutRing(n){
     switch(n){
-      case 2: return [[{i:0,rot:true}],[{i:1}]];
-      case 3: return [[{i:0,rot:true}],[{i:1},{i:2}]];
-      case 4: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
-      case 5: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}],[{i:4}]];
-      case 6: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2,rot:true},{i:3}],[{i:4},{i:5}]];
-      default: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
+      case 2: return [ [0], "coin", [1] ];
+      case 3: return [ [0], "coin", [1,2] ];
+      case 4: return [ [0,1], "coin", [2,3] ];
+      case 5: return [ [0,1], "coin", [2,3], [4] ];
+      case 6: return [ [0,1], [2], "coin", [3], [4,5] ];
+      default: return [ [0,1], "coin", [2,3] ];
     }
   }
 
@@ -436,20 +441,30 @@
   function buildBoard(){
     el.rows.innerHTML = "";
     tileEls = [];
-    var rows = layoutFor(S.count);
-    rows.forEach(function(rowCfg){
+    var items = layoutRing(S.count);
+    var aboveCoin = true; // rows before the coin band face the top edge
+    items.forEach(function(item){
+      if(item === "coin"){
+        var spacer = document.createElement("div");
+        spacer.className = "coinrow";
+        spacer.setAttribute("data-testid","coinrow");
+        el.rows.appendChild(spacer);
+        aboveCoin = false;
+        return;
+      }
+      var rowCfg = item;
       var row = document.createElement("div");
       row.className = "row";
-      // Weight row height by 1/columns so a tile spanning a wider row also gets
-      // a taller row, keeping each tile roughly square on a tall screen.
-      row.style.flex = (1 / rowCfg.length) + " 1 0%";
-      rowCfg.forEach(function(c){
-        var i = c.i;
+      // Weight row height by its column count so every box has the same area
+      // (box area = (width/cols) * (height ~ cols) = constant).
+      row.style.flex = rowCfg.length + " 1 0%";
+      rowCfg.forEach(function(i){
+        var rot = aboveCoin;
         var tile = document.createElement("div");
-        tile.className = "tile" + (c.rot ? " rot" : "");
+        tile.className = "tile" + (rot ? " rot" : "");
         tile.setAttribute("data-testid","tile");
         tile.setAttribute("data-player-index", String(i));
-        tile.setAttribute("data-rotated", c.rot ? "true" : "false");
+        tile.setAttribute("data-rotated", rot ? "true" : "false");
 
         var dec = document.createElement("div");
         dec.className = "zone dec";
@@ -494,10 +509,21 @@
       el.rows.appendChild(row);
     });
     updateTiles();
+    positionCoin();          // centre the coin in its band before measuring angles
     computeSeatOrder();      // tiles exist now; derive the clockwise seating ring
     applyTileOrientation();  // split +/- along each tile's longer side
     updateCoin();
     updatePointer(true);     // tile positions changed; re-aim the arrow
+  }
+
+  // Place the coin in the middle of its dedicated band so it never overlaps a
+  // life box. The band may sit slightly off the exact centre for odd counts.
+  function positionCoin(){
+    var spacer = el.rows.querySelector('[data-testid="coinrow"]');
+    if(!spacer) return;
+    var b = el.board.getBoundingClientRect();
+    var r = spacer.getBoundingClientRect();
+    el.coin.style.top = ((r.top + r.height/2) - b.top) + "px";
   }
 
   // Split each tile's +/- zones along its longer side: tall tiles get a
@@ -654,8 +680,14 @@
     if(S.active!=null && S.players[S.active]){
       var hex = PALETTE[S.players[S.active].color] || "#555";
       document.documentElement.style.setProperty("--active", hex);
+      // tint the glass coin with the active player's colour so the whole circle
+      // — not just the thin ring — reads clearly as that player's colour
+      var cr=parseInt(hex.slice(1,3),16), cg=parseInt(hex.slice(3,5),16), cb=parseInt(hex.slice(5,7),16);
+      var mix=function(c,d){ return Math.round(c*0.34 + d*0.66); };
+      el.coin.style.background = "rgba("+mix(cr,16)+","+mix(cg,18)+","+mix(cb,22)+",0.74)";
     } else {
       document.documentElement.style.setProperty("--active", "#555");
+      el.coin.style.background = "";
     }
     var ct = (S.phase==="playing" && S.active!=null) ? currentTurn() : 0;
     el.turn.textContent = fmt(ct);
@@ -664,7 +696,7 @@
     updatePointer(false);
   }
   setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
-  window.addEventListener("resize", function(){ computeSeatOrder(); applyTileOrientation(); updatePointer(true); });
+  window.addEventListener("resize", function(){ positionCoin(); computeSeatOrder(); applyTileOrientation(); updatePointer(true); });
 
   function bankCurrent(){
     if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
@@ -689,14 +721,30 @@
     updateCoin(); save();
   }
 
-  // coin: single tap = pass turn, double tap = pause
+  // coin gestures: tap = pass turn, double tap = pause, hold 1s = open settings
   var pendingPass = null;
-  el.coin.addEventListener("click", function(e){
+  var coinHoldTimer = null, coinHeld = false;
+  el.coin.addEventListener("pointerdown", function(e){
+    if(e.target.closest('[data-testid="settings-open"]')) return;
+    coinHeld = false;
+    coinHoldTimer = setTimeout(function(){
+      coinHeld = true;
+      if(pendingPass){ clearTimeout(pendingPass); pendingPass = null; }
+      if(navigator.vibrate){ try{ navigator.vibrate(18); }catch(_){} }
+      openSheet();
+    }, 1000);
+  });
+  function coinHoldCancel(){ if(coinHoldTimer){ clearTimeout(coinHoldTimer); coinHoldTimer = null; } }
+  el.coin.addEventListener("pointerup", function(e){
+    coinHoldCancel();
+    if(coinHeld){ coinHeld = false; return; }   // the hold already opened settings
     if(e.target.closest('[data-testid="settings-open"]')) return;
     if(S.phase!=="playing") return;
     if(pendingPass){ clearTimeout(pendingPass); pendingPass=null; togglePause(); }
     else { pendingPass = setTimeout(function(){ pendingPass=null; passTurn(); }, CFG.dblMs); }
   });
+  el.coin.addEventListener("pointercancel", coinHoldCancel);
+  el.coin.addEventListener("pointerleave", coinHoldCancel);
 
   // ---- who-goes-first roll --------------------------------------------
   var rollTimers = [];
