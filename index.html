@@ -47,7 +47,11 @@
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
     pointer-events:none;opacity:.97;
+    transition:transform .2s ease;
   }
+  /* tall tiles: the number is rotated a quarter turn so it runs along the
+     longer side; the exact rotation (and font size) is set per tile in JS so
+     it reads upright for the player seated on that long edge (left/right) */
   /* default (wide tiles): split along the vertical centre line, left −, right + */
   .zone{position:absolute;top:0;bottom:0;width:50%;height:auto;touch-action:none;cursor:pointer;background:transparent;outline:none}
   .zone.dec{left:0;right:auto}
@@ -498,11 +502,31 @@
 
   // Split each tile's +/- zones along its longer side: tall tiles get a
   // top(+)/bottom(-) split, wide tiles keep the left(-)/right(+) split.
+  // On tall tiles the number is rotated 90deg (see CSS), so size it to the
+  // tile: its glyph height is bounded by the tile width, its length by the
+  // tile height. Leave margins so it never touches the +/- signs.
   function applyTileOrientation(){
+    var b = el.board.getBoundingClientRect();
+    var midX = b.left + b.width/2;
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
       var r = t.tile.getBoundingClientRect();
-      t.tile.classList.toggle("tall", r.height > r.width);
+      var tall = r.height > r.width;
+      t.tile.classList.toggle("tall", tall);
+      if(tall){
+        var px = Math.min(r.width*0.82, r.height*0.5, 260);
+        t.life.style.fontSize = Math.round(px) + "px";
+        // Face the number toward the long edge the player sits on: tiles in the
+        // left column read from the left, tiles in the right column from the
+        // right. Compensate for the tile's own 180deg rotation when present.
+        var leftCol = (r.left + r.width/2) < midX - 1;
+        var screenDeg = leftCol ? 90 : -90;
+        var isRot = t.tile.classList.contains("rot");
+        t.life.style.transform = "rotate(" + (screenDeg - (isRot ? 180 : 0)) + "deg)";
+      } else {
+        t.life.style.fontSize = "";
+        t.life.style.transform = "";
+      }
     }
   }
 
