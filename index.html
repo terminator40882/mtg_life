@@ -108,14 +108,18 @@
     position:absolute;inset:calc(var(--coin-border) * -1);
     pointer-events:none;z-index:7;transform:rotate(0deg);
     transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
+    /* continuously sweep the arrow through the full hue spectrum;
+       cycle length is configurable via --ptr-cycle */
+    animation:ptrHue var(--ptr-cycle,6s) linear infinite;
   }
   .coin .pointer.hidden{opacity:0}
   .coin .pointer::before{
-    content:"";position:absolute;left:50%;top:-7px;transform:translateX(-50%);
-    border-left:11px solid transparent;border-right:11px solid transparent;
-    border-bottom:15px solid #fff;
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.65));
+    content:"";position:absolute;left:50%;top:-9px;transform:translateX(-50%);
+    border-left:14px solid transparent;border-right:14px solid transparent;
+    border-bottom:19px solid hsl(0,90%,55%);
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
   }
+  @keyframes ptrHue{ from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
   .coin .turn{font-size:clamp(23px,6.4vw,31px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
   .coin .total{font-size:clamp(12px,3.4vw,15px);color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
   .coin.paused .turn,.coin.paused .total{color:var(--danger)}
@@ -229,6 +233,14 @@
     </div>
   </div>
   <div class="srow">
+    <span class="lab">Turn arrow cycle</span>
+    <div class="stepper">
+      <button data-testid="ptr-dec" aria-label="Decrease arrow colour cycle time">–</button>
+      <span class="val" data-testid="ptr-val">6s</span>
+      <button data-testid="ptr-inc" aria-label="Increase arrow colour cycle time">+</button>
+    </div>
+  </div>
+  <div class="srow">
     <span class="lab">Direction</span>
     <div class="seg" id="dirSeg">
       <button data-testid="dir-cw" data-dir="cw">↻ CW</button>
@@ -280,6 +292,7 @@
     startingLife: 40,
     direction: "cw",
     deltaFadeMs: CFG.fadeMs,  // how long the +/- change chip stays visible
+    ptrCycleSec: 6,           // seconds for one full hue cycle of the turn arrow
     players: [],            // {name, color}
     life: [],               // per player
     totals: [],             // banked ms per player
@@ -305,7 +318,7 @@
     try{
       var data = {
         count:S.count, startingLife:S.startingLife, direction:S.direction,
-        deltaFadeMs:S.deltaFadeMs,
+        deltaFadeMs:S.deltaFadeMs, ptrCycleSec:S.ptrCycleSec,
         players:S.players, life:S.life, totals:S.totals, active:S.active,
         paused:S.paused, turnAccum:currentTurn()
       };
@@ -388,6 +401,9 @@
     deltaVal: document.querySelector('[data-testid="delta-val"]'),
     deltaDec: document.querySelector('[data-testid="delta-dec"]'),
     deltaInc: document.querySelector('[data-testid="delta-inc"]'),
+    ptrVal: document.querySelector('[data-testid="ptr-val"]'),
+    ptrDec: document.querySelector('[data-testid="ptr-dec"]'),
+    ptrInc: document.querySelector('[data-testid="ptr-inc"]'),
     playerList: document.getElementById("playerList"),
     reset: document.querySelector('[data-testid="reset"]'),
     done: document.querySelector('[data-testid="settings-done"]'),
@@ -812,6 +828,17 @@
   el.deltaDec.addEventListener("click", function(){ stepDeltaFade(-1); });
   el.deltaInc.addEventListener("click", function(){ stepDeltaFade(+1); });
 
+  // turn-arrow hue cycle length (seconds); 1s..30s
+  function applyPtrCycle(){
+    document.documentElement.style.setProperty("--ptr-cycle", S.ptrCycleSec + "s");
+  }
+  function stepPtrCycle(deltaSec){
+    S.ptrCycleSec = Math.max(1, Math.min(30, S.ptrCycleSec + deltaSec));
+    applyPtrCycle(); syncSettingsUI(); save();
+  }
+  el.ptrDec.addEventListener("click", function(){ stepPtrCycle(-1); });
+  el.ptrInc.addEventListener("click", function(){ stepPtrCycle(+1); });
+
   function buildPlayerRows(){
     el.playerList.innerHTML = "";
     for(var i=0;i<S.count;i++){
@@ -891,6 +918,7 @@
     });
     el.lifeVal.textContent = String(S.startingLife);
     el.deltaVal.textContent = Math.round(S.deltaFadeMs/1000) + "s";
+    el.ptrVal.textContent = S.ptrCycleSec + "s";
   }
 
   // ---- boot ------------------------------------------------------------
@@ -900,6 +928,7 @@
       S.count = saved.count || 4;
       S.startingLife = saved.startingLife || 40;
       S.deltaFadeMs = (typeof saved.deltaFadeMs==="number" && saved.deltaFadeMs>0) ? saved.deltaFadeMs : CFG.fadeMs;
+      S.ptrCycleSec = (typeof saved.ptrCycleSec==="number" && saved.ptrCycleSec>0) ? saved.ptrCycleSec : 6;
       S.direction = saved.direction==="ccw" ? "ccw" : "cw";
       S.players = (saved.players && saved.players.length)? saved.players : defaultPlayers(S.count);
       while(S.players.length < S.count) S.players.push({name:"Player "+(S.players.length+1), color:COLOR_ORDER[S.players.length%COLOR_ORDER.length]});
@@ -918,12 +947,13 @@
       syncSettingsUI(); buildBoard(); buildPlayerRows();
       resetGame(true);
     }
+    applyPtrCycle();
   }
 
   // minimal debug handle (read-only-ish)
   window.MTG = {
     version:"1.0.0",
-    get state(){ return JSON.parse(JSON.stringify({count:S.count,direction:S.direction,active:S.active,paused:S.paused,phase:S.phase,life:S.life,totals:S.totals,startingLife:S.startingLife,deltaFadeMs:S.deltaFadeMs})); },
+    get state(){ return JSON.parse(JSON.stringify({count:S.count,direction:S.direction,active:S.active,paused:S.paused,phase:S.phase,life:S.life,totals:S.totals,startingLife:S.startingLife,deltaFadeMs:S.deltaFadeMs,ptrCycleSec:S.ptrCycleSec})); },
     currentTurnMs:function(){ return currentTurn(); }
   };
 
