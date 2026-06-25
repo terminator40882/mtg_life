@@ -48,9 +48,14 @@
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
     pointer-events:none;opacity:.97;
   }
-  .zone{position:absolute;top:0;bottom:0;width:50%;touch-action:none;cursor:pointer;background:transparent;outline:none}
-  .zone.dec{left:0}
-  .zone.inc{right:0}
+  /* default (wide tiles): split along the vertical centre line, left −, right + */
+  .zone{position:absolute;top:0;bottom:0;width:50%;height:auto;touch-action:none;cursor:pointer;background:transparent;outline:none}
+  .zone.dec{left:0;right:auto}
+  .zone.inc{right:0;left:auto}
+  /* tall tiles: split along the horizontal centre line, top +, bottom − */
+  .tile.tall .zone{left:0;right:0;top:auto;bottom:auto;width:auto;height:50%}
+  .tile.tall .zone.inc{top:0}
+  .tile.tall .zone.dec{bottom:0}
   .zone .sign{
     position:absolute;top:50%;transform:translateY(-50%);
     font-size:clamp(26px,7vw,48px);font-weight:700;color:var(--fg,#fff);
@@ -58,6 +63,9 @@
   }
   .zone.dec .sign{left:11%}
   .zone.inc .sign{right:11%}
+  .tile.tall .zone .sign{top:auto;bottom:auto;left:50%;right:auto;transform:translateX(-50%)}
+  .tile.tall .zone.inc .sign{top:8%}
+  .tile.tall .zone.dec .sign{bottom:8%}
   .zone.pressing .sign{opacity:.32}
   .zone:focus-visible{box-shadow:inset 0 0 0 3px rgba(255,255,255,.5)}
   .delta{
@@ -325,10 +333,40 @@
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   }
   function pickFirst(){ return Math.floor(rnd()*S.count) % S.count; }
-  function nextIndex(i){ return S.direction==="cw" ? (i+1)%S.count : (i-1+S.count)%S.count; }
+
+  // Seating ring: players ordered by the angle of their tile around the board
+  // centre, so turns follow the physical clockwise/counter-clockwise layout on
+  // screen instead of the internal index order (which could skip across seats).
+  var seatOrder = [];   // clockwise list of player indices
+  var seatRank = [];    // player index -> position within seatOrder
+  function computeSeatOrder(){
+    var b = el.board.getBoundingClientRect();
+    var cx = b.left + b.width/2, cy = b.top + b.height/2;
+    var arr = [];
+    for(var i=0;i<S.count;i++){
+      var t = tileEls[i]; if(!t) continue;
+      var r = t.tile.getBoundingClientRect();
+      // atan2 with screen (y-down) coords increases clockwise from north
+      var ang = Math.atan2((r.top+r.height/2)-cy, (r.left+r.width/2)-cx);
+      arr.push({ i:i, ang:ang });
+    }
+    arr.sort(function(a,b){ return a.ang - b.ang; });
+    seatOrder = arr.map(function(o){ return o.i; });
+    seatRank = [];
+    seatOrder.forEach(function(idx, pos){ seatRank[idx] = pos; });
+  }
+  function nextIndex(i){
+    if(!seatOrder.length || seatRank[i]==null){
+      return S.direction==="cw" ? (i+1)%S.count : (i-1+S.count)%S.count;
+    }
+    var step = S.direction==="cw" ? 1 : -1;
+    var pos = (seatRank[i] + step + seatOrder.length) % seatOrder.length;
+    return seatOrder[pos];
+  }
   function directionOrder(){
-    var o=[]; for(var i=0;i<S.count;i++) o.push(i);
-    return S.direction==="cw" ? o : [o[0]].concat(o.slice(1).reverse());
+    var base = seatOrder.length ? seatOrder.slice() : (function(){ var o=[]; for(var i=0;i<S.count;i++) o.push(i); return o; })();
+    if(S.direction!=="cw") base.reverse();
+    return base;
   }
 
   // ---- dom refs --------------------------------------------------------
@@ -436,8 +474,20 @@
       el.rows.appendChild(row);
     });
     updateTiles();
+    computeSeatOrder();      // tiles exist now; derive the clockwise seating ring
+    applyTileOrientation();  // split +/- along each tile's longer side
     updateCoin();
-    updatePointer(true); // tile positions changed; re-aim the arrow
+    updatePointer(true);     // tile positions changed; re-aim the arrow
+  }
+
+  // Split each tile's +/- zones along its longer side: tall tiles get a
+  // top(+)/bottom(-) split, wide tiles keep the left(-)/right(+) split.
+  function applyTileOrientation(){
+    for(var i=0;i<S.count;i++){
+      var t = tileEls[i]; if(!t) continue;
+      var r = t.tile.getBoundingClientRect();
+      t.tile.classList.toggle("tall", r.height > r.width);
+    }
   }
 
   function applyTileColor(i){
@@ -565,7 +615,7 @@
     updatePointer(false);
   }
   setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
-  window.addEventListener("resize", function(){ updatePointer(true); });
+  window.addEventListener("resize", function(){ computeSeatOrder(); applyTileOrientation(); updatePointer(true); });
 
   function bankCurrent(){
     if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
