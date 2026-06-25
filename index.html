@@ -36,8 +36,6 @@
   .board{position:absolute;inset:0;background:var(--gutter)}
   #rows{position:absolute;inset:0;display:flex;flex-direction:column;gap:var(--gap);background:var(--gutter)}
   .row{flex:1;display:flex;gap:var(--gap);min-height:0}
-  /* clear central band that the coin lives in, so it never overlaps a box */
-  .coinrow{flex:0 0 calc(var(--coin) + 66px);min-height:0;pointer-events:none}
   .tile{
     flex:1;position:relative;overflow:hidden;min-width:0;
     background:var(--tile,#333);color:var(--fg,#fff);
@@ -419,20 +417,18 @@
   };
 
   // ---- layout ----------------------------------------------------------
-  // Boxes are arranged in rows around a central coin band, so the coin sits in
-  // its own clear space and the boxes ring it above and below. Each item is
-  // either the string "coin" (the central spacer) or an array of player indices
-  // forming one row (max two, to avoid thin slivers). Rows above the coin face
-  // the top edge (rotated 180). Row heights are weighted by their column count
-  // in buildBoard() so every box ends up with the same area.
-  function layoutRing(n){
+  // Boxes fill the whole viewport; the coin sits in the centre and overlaps
+  // where boxes meet. Numbers are then sized and shifted clear of the coin in
+  // applyTileOrientation(). Rows above the middle face the top edge (rotated
+  // 180); row heights are weighted by column count so every box has equal area.
+  function layoutFor(n){
     switch(n){
-      case 2: return [ [0], "coin", [1] ];
-      case 3: return [ [0], "coin", [1,2] ];
-      case 4: return [ [0,1], "coin", [2,3] ];
-      case 5: return [ [0,1], "coin", [2,3], [4] ];
-      case 6: return [ [0,1], [2], "coin", [3], [4,5] ];
-      default: return [ [0,1], "coin", [2,3] ];
+      case 2: return [[{i:0,rot:1}],[{i:1}]];
+      case 3: return [[{i:0,rot:1}],[{i:1},{i:2}]];
+      case 4: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}]];
+      case 5: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}],[{i:4}]];
+      case 6: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2,rot:1},{i:3}],[{i:4},{i:5}]];
+      default: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}]];
     }
   }
 
@@ -441,25 +437,15 @@
   function buildBoard(){
     el.rows.innerHTML = "";
     tileEls = [];
-    var items = layoutRing(S.count);
-    var aboveCoin = true; // rows before the coin band face the top edge
-    items.forEach(function(item){
-      if(item === "coin"){
-        var spacer = document.createElement("div");
-        spacer.className = "coinrow";
-        spacer.setAttribute("data-testid","coinrow");
-        el.rows.appendChild(spacer);
-        aboveCoin = false;
-        return;
-      }
-      var rowCfg = item;
+    var rows = layoutFor(S.count);
+    rows.forEach(function(rowCfg){
       var row = document.createElement("div");
       row.className = "row";
       // Weight row height by its column count so every box has the same area
       // (box area = (width/cols) * (height ~ cols) = constant).
       row.style.flex = rowCfg.length + " 1 0%";
-      rowCfg.forEach(function(i){
-        var rot = aboveCoin;
+      rowCfg.forEach(function(c){
+        var i = c.i, rot = !!c.rot;
         var tile = document.createElement("div");
         tile.className = "tile" + (rot ? " rot" : "");
         tile.setAttribute("data-testid","tile");
@@ -509,50 +495,61 @@
       el.rows.appendChild(row);
     });
     updateTiles();
-    positionCoin();          // centre the coin in its band before measuring angles
     computeSeatOrder();      // tiles exist now; derive the clockwise seating ring
-    applyTileOrientation();  // split +/- along each tile's longer side
+    applyTileOrientation();  // size/position numbers clear of the coin
     updateCoin();
     updatePointer(true);     // tile positions changed; re-aim the arrow
   }
 
-  // Place the coin in the middle of its dedicated band so it never overlaps a
-  // life box. The band may sit slightly off the exact centre for odd counts.
-  function positionCoin(){
-    var spacer = el.rows.querySelector('[data-testid="coinrow"]');
-    if(!spacer) return;
-    var b = el.board.getBoundingClientRect();
-    var r = spacer.getBoundingClientRect();
-    el.coin.style.top = ((r.top + r.height/2) - b.top) + "px";
-  }
-
-  // Split each tile's +/- zones along its longer side: tall tiles get a
-  // top(+)/bottom(-) split, wide tiles keep the left(-)/right(+) split.
-  // On tall tiles the number is rotated 90deg (see CSS), so size it to the
-  // tile: its glyph height is bounded by the tile width, its length by the
-  // tile height. Leave margins so it never touches the +/- signs.
+  // For each box: decide the +/- split orientation (tall => top/bottom), then
+  // size and shift its number into the largest part of the box that the centre
+  // coin does NOT cover, so numbers stay as large as possible yet never hidden
+  // behind the coin. Tall boxes keep the quarter-turn, column-based facing.
   function applyTileOrientation(){
     var b = el.board.getBoundingClientRect();
     var midX = b.left + b.width/2;
+    var coin = el.coin.getBoundingClientRect();
+    var Cx = coin.left + coin.width/2, Cy = coin.top + coin.height/2;
+    var Cr = coin.width/2 + 12;                 // coin radius + clearance
+    var kx0 = Cx-Cr, kx1 = Cx+Cr, ky0 = Cy-Cr, ky1 = Cy+Cr; // keep-out square
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
       var r = t.tile.getBoundingClientRect();
       var tall = r.height > r.width;
       t.tile.classList.toggle("tall", tall);
-      if(tall){
-        var px = Math.min(r.width*0.82, r.height*0.5, 260);
-        t.life.style.fontSize = Math.round(px) + "px";
-        // Face the number toward the long edge the player sits on: tiles in the
-        // left column read from the left, tiles in the right column from the
-        // right. Compensate for the tile's own 180deg rotation when present.
-        var leftCol = (r.left + r.width/2) < midX - 1;
-        var screenDeg = leftCol ? 90 : -90;
-        var isRot = t.tile.classList.contains("rot");
-        t.life.style.transform = "rotate(" + (screenDeg - (isRot ? 180 : 0)) + "deg)";
-      } else {
-        t.life.style.fontSize = "";
-        t.life.style.transform = "";
+
+      // largest clear sub-rectangle of the box that avoids the coin keep-out
+      var clr = { x0:r.left, y0:r.top, x1:r.right, y1:r.bottom };
+      if(r.right>kx0 && r.left<kx1 && r.bottom>ky0 && r.top<ky1){
+        var leftW=kx0-r.left, rightW=r.right-kx1, topH=ky0-r.top, botH=r.bottom-ky1;
+        var besideArea = Math.max(leftW,rightW) * r.height;
+        var aboveArea  = Math.max(topH,botH)  * r.width;
+        if(besideArea >= aboveArea){
+          if(leftW>=rightW) clr.x1=kx0; else clr.x0=kx1;
+        } else {
+          if(topH>=botH) clr.y1=ky0; else clr.y0=ky1;
+        }
       }
+      var cw = Math.max(12, clr.x1-clr.x0), ch = Math.max(12, clr.y1-clr.y0);
+
+      // size to the clear rect; reserve room for up to 3 digits so growing
+      // life totals stay clear without re-laying out on every change
+      var px = tall ? Math.min(cw*0.84, ch/1.9, 260)
+                    : Math.min(ch*0.84, cw/1.9, 260);
+      t.life.style.fontSize = Math.round(Math.max(20, px)) + "px";
+
+      // translate the number to the centre of the clear rect (screen space),
+      // converted to the tile's local frame (its 180deg rotation flips signs)
+      var sx = (clr.x0+clr.x1)/2 - (r.left+r.width/2);
+      var sy = (clr.y0+clr.y1)/2 - (r.top+r.height/2);
+      var rot = t.tile.classList.contains("rot");
+      var lx = rot ? -sx : sx, ly = rot ? -sy : sy;
+      var rotDeg = 0;
+      if(tall){
+        var leftCol = (r.left+r.width/2) < midX - 1;
+        rotDeg = (leftCol ? 90 : -90) - (rot ? 180 : 0);
+      }
+      t.life.style.transform = "translate("+Math.round(lx)+"px,"+Math.round(ly)+"px) rotate("+rotDeg+"deg)";
     }
   }
 
@@ -696,7 +693,7 @@
     updatePointer(false);
   }
   setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
-  window.addEventListener("resize", function(){ positionCoin(); computeSeatOrder(); applyTileOrientation(); updatePointer(true); });
+  window.addEventListener("resize", function(){ computeSeatOrder(); applyTileOrientation(); updatePointer(true); });
 
   function bankCurrent(){
     if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
