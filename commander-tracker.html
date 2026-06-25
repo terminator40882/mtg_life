@@ -1,0 +1,812 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0a0c0f" />
+<title>Commander life</title>
+<style>
+  :root{
+    --bg:#08090c;
+    --gutter:#000;
+    --coin-bg:rgba(16,18,22,0.62);
+    --chip-bg:rgba(10,11,14,0.55);
+    --sheet:#15181d;
+    --sheet-row:#1d2128;
+    --line:rgba(255,255,255,0.10);
+    --text:#f2f4f7;
+    --muted:rgba(255,255,255,0.62);
+    --danger:#ff5b5b;
+    --active:#555;
+    --gap:5px;
+    --coin: clamp(94px, 23vw, 124px);
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,system-ui,sans-serif;
+    overflow:hidden;-webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    overscroll-behavior:none;touch-action:none;
+  }
+  #app{position:fixed;inset:0}
+  .board{position:absolute;inset:0;background:var(--gutter)}
+  #rows{position:absolute;inset:0;display:flex;flex-direction:column;gap:var(--gap);background:var(--gutter)}
+  .row{flex:1;display:flex;gap:var(--gap);min-height:0}
+  .tile{
+    flex:1;position:relative;overflow:hidden;min-width:0;
+    background:var(--tile,#333);color:var(--fg,#fff);
+    display:grid;place-items:center;
+    transition:filter .18s ease, box-shadow .2s ease;
+  }
+  .tile.rot{transform:rotate(180deg)}
+  .tile .life{
+    font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
+    font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
+    pointer-events:none;opacity:.97;
+  }
+  .zone{position:absolute;top:0;bottom:0;width:50%;touch-action:none;cursor:pointer;background:transparent;outline:none}
+  .zone.dec{left:0}
+  .zone.inc{right:0}
+  .zone .sign{
+    position:absolute;top:50%;transform:translateY(-50%);
+    font-size:clamp(26px,7vw,48px);font-weight:700;color:var(--fg,#fff);
+    opacity:0;transition:opacity .12s ease;pointer-events:none;
+  }
+  .zone.dec .sign{left:11%}
+  .zone.inc .sign{right:11%}
+  .zone.pressing .sign{opacity:.32}
+  .zone:focus-visible{box-shadow:inset 0 0 0 3px rgba(255,255,255,.5)}
+  .delta{
+    position:absolute;top:15%;left:50%;transform:translate(-50%,-6px);
+    background:var(--chip-bg);color:#fff;border:1px solid rgba(255,255,255,.16);
+    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    padding:4px 12px;border-radius:999px;font-size:clamp(14px,4vw,20px);font-weight:600;
+    font-variant-numeric:tabular-nums;pointer-events:none;
+    opacity:0;transition:opacity .25s ease, transform .25s ease;
+  }
+  .delta.show{opacity:1;transform:translate(-50%,0)}
+  .badge{
+    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.6);
+    background:#fff;color:#111;border-radius:999px;padding:7px 16px;
+    font-weight:700;font-size:clamp(18px,5vw,26px);
+    opacity:0;transition:opacity .25s ease, transform .25s ease;
+    pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.45);z-index:6;
+  }
+  .badge.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+  .badge.second{font-size:clamp(14px,4vw,20px);background:rgba(255,255,255,.92)}
+
+  .board.rolling .tile{filter:brightness(.34) saturate(.85)}
+  .board.rolling .tile.spot{filter:none;box-shadow:inset 0 0 0 4px rgba(255,255,255,.85)}
+  .board.rolling .tile.first{filter:none;box-shadow:inset 0 0 0 5px #fff}
+
+  .coin{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    width:var(--coin);height:var(--coin);border-radius:50%;
+    background:var(--coin-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+    border:2.5px solid var(--active);
+    display:flex;flex-direction:column;align-items:center;justify-content:center;
+    z-index:5;cursor:pointer;touch-action:none;
+    box-shadow:0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+    transition:border-color .25s ease, opacity .2s ease;
+  }
+  .coin.hidden{opacity:0;pointer-events:none}
+  .coin .turn{font-size:clamp(19px,5.4vw,25px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+  .coin .total{font-size:clamp(11px,3vw,13px);color:var(--muted);font-variant-numeric:tabular-nums;margin-top:2px}
+  .coin.paused .turn,.coin.paused .total{color:var(--danger)}
+  .coin .dots{
+    position:absolute;top:9px;left:50%;transform:translateX(-50%);
+    display:flex;gap:3px;padding:8px 10px;cursor:pointer;border:0;background:transparent;
+  }
+  .coin .dots span{width:3.2px;height:3.2px;border-radius:50%;background:var(--muted)}
+
+  #hint{
+    position:fixed;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
+    color:var(--text);font-size:14px;font-weight:600;letter-spacing:.02em;
+    background:rgba(10,11,14,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
+    padding:8px 16px;border-radius:999px;border:1px solid var(--line);
+    opacity:0;transition:opacity .25s ease;pointer-events:none;z-index:20
+  }
+  #hint.show{opacity:1}
+  #skip{position:fixed;inset:0;z-index:15;background:transparent;display:none}
+  #skip.show{display:block}
+
+  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
+    z-index:30;opacity:0;pointer-events:none;transition:opacity .2s ease}
+  .overlay.show{opacity:1;pointer-events:auto}
+  .sheet{
+    position:fixed;left:0;right:0;bottom:0;z-index:31;
+    background:var(--sheet);border-radius:22px 22px 0 0;
+    padding:10px 18px calc(18px + env(safe-area-inset-bottom));
+    max-height:88dvh;overflow:auto;overscroll-behavior:contain;touch-action:auto;
+    transform:translateY(102%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
+    box-shadow:0 -10px 40px rgba(0,0,0,.5)
+  }
+  .sheet.show{transform:translateY(0)}
+  .grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.22);margin:6px auto 12px}
+  .sheet h2{font-size:18px;font-weight:600;margin:2px 2px 14px}
+  .srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 2px;border-top:1px solid var(--line)}
+  .srow:first-of-type{border-top:0}
+  .srow .lab{font-size:15px;color:var(--text)}
+  .seg{display:flex;background:var(--sheet-row);border-radius:11px;padding:3px;gap:2px}
+  .seg button{
+    border:0;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:600;
+    padding:7px 12px;border-radius:8px;cursor:pointer;min-width:38px
+  }
+  .seg button.on{background:#3a3f49;color:#fff}
+  .stepper{display:flex;align-items:center;gap:6px;background:var(--sheet-row);border-radius:11px;padding:3px}
+  .stepper button{width:34px;height:32px;border:0;border-radius:8px;background:transparent;color:#fff;font-size:20px;cursor:pointer}
+  .stepper button:active{background:#3a3f49}
+  .stepper .val{min-width:34px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+  #playerList{margin-top:4px}
+  .prow{padding:11px 2px;border-top:1px solid var(--line)}
+  .prow .head{display:flex;align-items:center;gap:12px}
+  .swatch{width:26px;height:26px;border-radius:8px;border:2px solid rgba(255,255,255,.25);cursor:pointer;flex:0 0 auto}
+  .prow input.name{
+    flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid var(--line);
+    color:var(--text);font:inherit;font-size:15px;padding:5px 2px;border-radius:0
+  }
+  .prow input.name:focus{outline:none;border-bottom-color:rgba(255,255,255,.45)}
+  .picker{display:none;flex-wrap:wrap;gap:9px;padding:12px 2px 4px}
+  .picker.open{display:flex}
+  .picker .opt{width:30px;height:30px;border-radius:8px;border:2px solid transparent;cursor:pointer}
+  .picker .opt.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.5)}
+  .reset{
+    width:100%;margin-top:18px;padding:15px;border-radius:13px;border:1px solid rgba(255,91,91,.4);
+    background:rgba(255,91,91,.12);color:#ff7a7a;font:inherit;font-size:16px;font-weight:600;cursor:pointer
+  }
+  .reset.confirm{background:#ff5b5b;color:#fff;border-color:#ff5b5b}
+  .done{width:100%;margin-top:10px;padding:13px;border-radius:13px;border:1px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-size:15px;cursor:pointer}
+
+  @media (prefers-reduced-motion: reduce){
+    *{transition:none !important;animation:none !important}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="board" data-testid="board">
+    <div id="rows"></div>
+    <div class="coin" data-testid="coin" aria-label="Turn timer">
+      <button class="dots" data-testid="settings-open" aria-label="Open settings"><span></span><span></span><span></span></button>
+      <div class="turn" data-testid="turn-time">0:00</div>
+      <div class="total" data-testid="total-time">0:00</div>
+    </div>
+  </div>
+</div>
+
+<div id="hint">Rolling for who goes first…</div>
+<div id="skip" data-testid="skip" aria-label="Skip"></div>
+
+<div class="overlay" data-testid="overlay"></div>
+<div class="sheet" data-testid="settings" role="dialog" aria-label="Settings">
+  <div class="grab"></div>
+  <h2>Settings</h2>
+  <div class="srow">
+    <span class="lab">Players</span>
+    <div class="seg" id="countSeg"></div>
+  </div>
+  <div class="srow">
+    <span class="lab">Starting life</span>
+    <div class="stepper">
+      <button data-testid="life-dec" aria-label="Decrease starting life">–</button>
+      <span class="val" data-testid="life-val">40</span>
+      <button data-testid="life-inc" aria-label="Increase starting life">+</button>
+    </div>
+  </div>
+  <div class="srow">
+    <span class="lab">Direction</span>
+    <div class="seg" id="dirSeg">
+      <button data-testid="dir-cw" data-dir="cw">↻ CW</button>
+      <button data-testid="dir-ccw" data-dir="ccw">↺ CCW</button>
+    </div>
+  </div>
+  <div id="playerList"></div>
+  <button class="reset" data-testid="reset">Reset game</button>
+  <button class="done" data-testid="settings-done">Done</button>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  // ---- config / test seams (URL params) -------------------------------
+  var Q = new URLSearchParams(location.search);
+  var qNum = function(k, d){ var v = parseInt(Q.get(k),10); return isNaN(v) ? d : v; };
+  var CFG = {
+    fadeMs:   qNum("fadeMs", 10000),   // delta chip auto-clear
+    holdMs:   qNum("holdMs", 350),     // hold before repeat begins
+    repMin:   qNum("repMin", 55),      // fastest repeat interval
+    repMax:   qNum("repMax", 180),     // starting repeat interval
+    dblMs:    qNum("dblMs", 250),      // single vs double tap window on coin
+    tickMs:   200,
+    nosplash: Q.has("nosplash"),
+    fresh:    Q.has("fresh"),
+    seed:     Q.has("seed") ? (qNum("seed",1) >>> 0) : null
+  };
+  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+
+  // ---- palette ---------------------------------------------------------
+  var PALETTE = {
+    crimson:"#C0392B", azure:"#2471C7", emerald:"#1E9E54", amber:"#D4A017",
+    violet:"#7D4FC0", teal:"#179B94", slate:"#39414E", rose:"#C2477A",
+    orange:"#D2733A", sky:"#3AA0D9", paper:"#E9E4D6", forest:"#2F6B3A"
+  };
+  var COLOR_ORDER = ["crimson","azure","emerald","amber","violet","teal","slate","rose","orange","sky","paper","forest"];
+  function fgFor(hex){
+    var r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+    var lum=(0.299*r+0.587*g+0.114*b)/255;
+    return lum>0.62 ? "#15130c" : "#ffffff";
+  }
+
+  // ---- state -----------------------------------------------------------
+  var STORE_KEY = "mtg-commander-tracker-v1";
+  var S = {
+    count: 4,
+    startingLife: 40,
+    direction: "cw",
+    players: [],            // {name, color}
+    life: [],               // per player
+    totals: [],             // banked ms per player
+    active: null,           // index or null
+    paused: false,
+    phase: "idle",          // idle | rolling | playing
+    turnAccum: 0,           // ms accumulated in current turn (running portions)
+    segStart: null          // timestamp when current running segment began
+  };
+  var deltaSum = [];         // per player, since last commit
+  var fadeTimer = [];        // per player
+
+  function defaultPlayers(n){
+    var arr=[];
+    for(var i=0;i<n;i++){
+      arr.push({ name:"Player "+(i+1), color: COLOR_ORDER[i % COLOR_ORDER.length] });
+    }
+    return arr;
+  }
+
+  // ---- persistence (guarded; degrades to in-memory) --------------------
+  function save(){
+    try{
+      var data = {
+        count:S.count, startingLife:S.startingLife, direction:S.direction,
+        players:S.players, life:S.life, totals:S.totals, active:S.active,
+        paused:S.paused, turnAccum:currentTurn()
+      };
+      localStorage.setItem(STORE_KEY, JSON.stringify(data));
+    }catch(e){/* storage unavailable */}
+  }
+  function load(){
+    if(CFG.fresh) return null;
+    try{
+      var raw = localStorage.getItem(STORE_KEY);
+      if(!raw) return null;
+      var d = JSON.parse(raw);
+      if(!d || !Array.isArray(d.players)) return null;
+      return d;
+    }catch(e){ return null; }
+  }
+
+  // ---- rng -------------------------------------------------------------
+  var _seed = CFG.seed;
+  function rnd(){
+    if(_seed===null) return Math.random();
+    _seed |= 0; _seed = (_seed + 0x6D2B79F5) | 0;
+    var t = Math.imul(_seed ^ (_seed >>> 15), 1 | _seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  }
+  function pickFirst(){ return Math.floor(rnd()*S.count) % S.count; }
+  function nextIndex(i){ return S.direction==="cw" ? (i+1)%S.count : (i-1+S.count)%S.count; }
+  function directionOrder(){
+    var o=[]; for(var i=0;i<S.count;i++) o.push(i);
+    return S.direction==="cw" ? o : [o[0]].concat(o.slice(1).reverse());
+  }
+
+  // ---- dom refs --------------------------------------------------------
+  var el = {
+    board: document.querySelector('[data-testid="board"]'),
+    rows: document.getElementById("rows"),
+    coin: document.querySelector('[data-testid="coin"]'),
+    turn: document.querySelector('[data-testid="turn-time"]'),
+    total: document.querySelector('[data-testid="total-time"]'),
+    settingsOpen: document.querySelector('[data-testid="settings-open"]'),
+    overlay: document.querySelector('[data-testid="overlay"]'),
+    sheet: document.querySelector('[data-testid="settings"]'),
+    countSeg: document.getElementById("countSeg"),
+    dirSeg: document.getElementById("dirSeg"),
+    lifeVal: document.querySelector('[data-testid="life-val"]'),
+    lifeDec: document.querySelector('[data-testid="life-dec"]'),
+    lifeInc: document.querySelector('[data-testid="life-inc"]'),
+    playerList: document.getElementById("playerList"),
+    reset: document.querySelector('[data-testid="reset"]'),
+    done: document.querySelector('[data-testid="settings-done"]'),
+    hint: document.getElementById("hint"),
+    skip: document.querySelector('[data-testid="skip"]')
+  };
+
+  // ---- layout ----------------------------------------------------------
+  function layoutFor(n){
+    switch(n){
+      case 2: return [[{i:0,rot:true}],[{i:1}]];
+      case 3: return [[{i:0,rot:true}],[{i:1},{i:2}]];
+      case 4: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
+      case 5: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3},{i:4}]];
+      case 6: return [[{i:0,rot:true},{i:1,rot:true},{i:2,rot:true}],[{i:3},{i:4},{i:5}]];
+      default: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
+    }
+  }
+
+  var tileEls = []; // index -> {tile, life, delta, badge}
+
+  function buildBoard(){
+    el.rows.innerHTML = "";
+    tileEls = [];
+    var rows = layoutFor(S.count);
+    rows.forEach(function(rowCfg){
+      var row = document.createElement("div");
+      row.className = "row";
+      rowCfg.forEach(function(c){
+        var i = c.i;
+        var tile = document.createElement("div");
+        tile.className = "tile" + (c.rot ? " rot" : "");
+        tile.setAttribute("data-testid","tile");
+        tile.setAttribute("data-player-index", String(i));
+        tile.setAttribute("data-rotated", c.rot ? "true" : "false");
+
+        var dec = document.createElement("div");
+        dec.className = "zone dec";
+        dec.setAttribute("data-testid","dec");
+        dec.setAttribute("role","button");
+        dec.setAttribute("tabindex","0");
+        dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
+        dec.innerHTML = '<span class="sign">–</span>';
+
+        var inc = document.createElement("div");
+        inc.className = "zone inc";
+        inc.setAttribute("data-testid","inc");
+        inc.setAttribute("role","button");
+        inc.setAttribute("tabindex","0");
+        inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
+        inc.innerHTML = '<span class="sign">+</span>';
+
+        var delta = document.createElement("div");
+        delta.className = "delta";
+        delta.setAttribute("data-testid","delta");
+
+        var life = document.createElement("div");
+        life.className = "life";
+        life.setAttribute("data-testid","life");
+
+        var badge = document.createElement("div");
+        badge.className = "badge";
+        badge.setAttribute("data-testid","badge");
+
+        tile.appendChild(dec);
+        tile.appendChild(inc);
+        tile.appendChild(delta);
+        tile.appendChild(life);
+        tile.appendChild(badge);
+        row.appendChild(tile);
+
+        tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc };
+        wireZone(dec, i, -1);
+        wireZone(inc, i, +1);
+        applyTileColor(i);
+      });
+      el.rows.appendChild(row);
+    });
+    updateTiles();
+    updateCoin();
+  }
+
+  function applyTileColor(i){
+    var hex = PALETTE[S.players[i].color] || "#333";
+    tileEls[i].tile.style.setProperty("--tile", hex);
+    tileEls[i].tile.style.setProperty("--fg", fgFor(hex));
+    tileEls[i].tile.setAttribute("data-color", S.players[i].color);
+  }
+
+  function updateTiles(){
+    for(var i=0;i<S.count;i++){
+      var t = tileEls[i]; if(!t) continue;
+      t.life.textContent = String(S.life[i]);
+      t.tile.setAttribute("data-life", String(S.life[i]));
+      var d = deltaSum[i] || 0;
+      t.tile.setAttribute("data-delta", String(d));
+      t.tile.setAttribute("data-active", S.active===i ? "true" : "false");
+    }
+  }
+
+  // ---- life changes ----------------------------------------------------
+  var press = {}; // index -> {holdTimer, repTimer, interval, dir}
+
+  function applyChange(i, dir){
+    S.life[i] += dir;
+    deltaSum[i] = (deltaSum[i]||0) + dir;
+    var t = tileEls[i];
+    t.life.textContent = String(S.life[i]);
+    t.tile.setAttribute("data-life", String(S.life[i]));
+    var d = deltaSum[i];
+    t.delta.textContent = (d>0?"+":"") + d;
+    t.delta.classList.add("show");
+    t.tile.setAttribute("data-delta", String(d));
+    armFade(i);
+    save();
+  }
+  function armFade(i){
+    if(fadeTimer[i]) clearTimeout(fadeTimer[i]);
+    fadeTimer[i] = setTimeout(function(){
+      deltaSum[i] = 0;
+      tileEls[i].delta.classList.remove("show");
+      tileEls[i].tile.setAttribute("data-delta","0");
+    }, CFG.fadeMs);
+  }
+  function startPress(e, i, dir){
+    if(S.phase==="rolling") return;
+    e.preventDefault();
+    try{ if(e.pointerId!=null) e.target.setPointerCapture(e.pointerId); }catch(_){}
+    var z = tileEls[i][dir<0?"dec":"inc"]; z.classList.add("pressing");
+    applyChange(i, dir);
+    var st = press[i] = { dir:dir, interval:CFG.repMax, zone:z };
+    st.holdTimer = setTimeout(function repeat(){
+      applyChange(i, dir);
+      st.interval = Math.max(CFG.repMin, Math.round(st.interval*0.84));
+      st.repTimer = setTimeout(repeat, st.interval);
+    }, CFG.holdMs);
+  }
+  function endPress(i){
+    var st = press[i]; if(!st) return;
+    if(st.holdTimer) clearTimeout(st.holdTimer);
+    if(st.repTimer) clearTimeout(st.repTimer);
+    if(st.zone) st.zone.classList.remove("pressing");
+    delete press[i];
+  }
+  function endAllPress(){ Object.keys(press).forEach(function(k){ endPress(+k); }); }
+
+  function wireZone(zone, i, dir){
+    zone.addEventListener("pointerdown", function(e){ startPress(e,i,dir); });
+    zone.addEventListener("pointerup", function(){ endPress(i); });
+    zone.addEventListener("pointercancel", function(){ endPress(i); });
+    zone.addEventListener("keydown", function(e){
+      if(e.key===" "||e.key==="Enter"){ e.preventDefault(); if(S.phase!=="rolling") applyChange(i,dir); }
+    });
+  }
+  window.addEventListener("pointerup", endAllPress);
+  window.addEventListener("pointercancel", endAllPress);
+  window.addEventListener("blur", endAllPress);
+
+  // ---- timer -----------------------------------------------------------
+  function currentTurn(){
+    return S.turnAccum + ((!S.paused && S.segStart!=null) ? (Date.now()-S.segStart) : 0);
+  }
+  function fmt(ms){
+    var s = Math.floor(ms/1000);
+    var h = Math.floor(s/3600);
+    var m = Math.floor((s%3600)/60);
+    var ss = s%60;
+    var p = function(x){ return (x<10?"0":"")+x; };
+    return h>0 ? (h+":"+p(m)+":"+p(ss)) : (m+":"+p(ss));
+  }
+  function updateCoin(){
+    var rolling = S.phase==="rolling";
+    el.coin.classList.toggle("hidden", rolling);
+    el.coin.classList.toggle("paused", S.paused);
+    if(S.active!=null && S.players[S.active]){
+      var hex = PALETTE[S.players[S.active].color] || "#555";
+      document.documentElement.style.setProperty("--active", hex);
+    } else {
+      document.documentElement.style.setProperty("--active", "#555");
+    }
+    var ct = (S.phase==="playing" && S.active!=null) ? currentTurn() : 0;
+    el.turn.textContent = fmt(ct);
+    var tot = (S.active!=null ? (S.totals[S.active]||0) : 0) + ct;
+    el.total.textContent = fmt(tot);
+  }
+  setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
+
+  function bankCurrent(){
+    if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
+  }
+  function passTurn(){
+    if(S.phase!=="playing" || S.active==null) return;
+    bankCurrent();
+    S.active = nextIndex(S.active);
+    S.turnAccum = 0;
+    S.segStart = S.paused ? null : Date.now();
+    updateTiles(); updateCoin(); save();
+  }
+  function togglePause(){
+    if(S.phase!=="playing") return;
+    if(!S.paused){
+      if(S.segStart!=null){ S.turnAccum += Date.now()-S.segStart; S.segStart=null; }
+      S.paused = true;
+    } else {
+      S.paused = false;
+      S.segStart = Date.now();
+    }
+    updateCoin(); save();
+  }
+
+  // coin: single tap = pass turn, double tap = pause
+  var pendingPass = null;
+  el.coin.addEventListener("click", function(e){
+    if(e.target.closest('[data-testid="settings-open"]')) return;
+    if(S.phase!=="playing") return;
+    if(pendingPass){ clearTimeout(pendingPass); pendingPass=null; togglePause(); }
+    else { pendingPass = setTimeout(function(){ pendingPass=null; passTurn(); }, CFG.dblMs); }
+  });
+
+  // ---- who-goes-first roll --------------------------------------------
+  var rollTimers = [];
+  var rollResult = { first:0, second:0 };
+  function clearRollTimers(){ rollTimers.forEach(clearTimeout); rollTimers = []; }
+
+  function startRoll(){
+    S.phase = "rolling"; S.active = null;
+    el.board.classList.add("rolling");
+    el.board.removeAttribute("data-first-player");
+    el.board.removeAttribute("data-second-player");
+    for(var i=0;i<S.count;i++){
+      tileEls[i].tile.classList.remove("spot","first");
+      tileEls[i].badge.classList.remove("show","second");
+      tileEls[i].badge.textContent = "";
+    }
+    updateCoin();
+    el.hint.classList.add("show");
+    el.skip.classList.add("show");
+
+    var first = pickFirst();
+    var second = nextIndex(first);
+    rollResult = { first:first, second:second };
+
+    if(reduceMotion){
+      finishRoll(first, second);
+      return;
+    }
+    var order = directionOrder();
+    var startPos = 0;
+    var dist = (order.indexOf(first) - startPos + S.count) % S.count;
+    var totalSteps = S.count*2 + dist;
+    var k = 0, prev = null, acc = 0;
+    function step(){
+      if(prev!=null) tileEls[prev].tile.classList.remove("spot");
+      var idx = order[(startPos+k)%S.count];
+      tileEls[idx].tile.classList.add("spot");
+      prev = idx;
+      if(navigator.vibrate){ try{ navigator.vibrate(7); }catch(_){} }
+      if(k>=totalSteps){ finishRoll(first, second); return; }
+      var frac = k/totalSteps;
+      var delay = Math.round(CFG.repMin + (300-CFG.repMin)*frac*frac) + 30;
+      k++;
+      var tmr = setTimeout(step, delay);
+      rollTimers.push(tmr);
+    }
+    step();
+  }
+
+  function finishRoll(first, second){
+    clearRollTimers();
+    for(var i=0;i<S.count;i++) tileEls[i].tile.classList.remove("spot");
+    tileEls[first].tile.classList.add("first");
+    tileEls[first].badge.textContent = "1st";
+    tileEls[first].badge.classList.add("show");
+    el.board.setAttribute("data-first-player", String(first));
+    el.board.setAttribute("data-second-player", String(second));
+
+    var revealSecond = function(){
+      tileEls[second].badge.textContent = "2nd";
+      tileEls[second].badge.classList.add("show","second");
+    };
+    var begin = function(){
+      el.board.classList.remove("rolling");
+      tileEls[first].tile.classList.remove("first");
+      tileEls[second].badge.classList.remove("show","second");
+      tileEls[first].badge.classList.remove("show");
+      el.hint.classList.remove("show");
+      el.skip.classList.remove("show");
+      S.active = first;
+      S.phase = "playing";
+      S.paused = false;
+      S.turnAccum = 0;
+      S.segStart = Date.now();
+      updateTiles(); updateCoin(); save();
+    };
+
+    if(reduceMotion){ revealSecond(); rollTimers.push(setTimeout(begin, 200)); return; }
+    rollTimers.push(setTimeout(revealSecond, 560));
+    rollTimers.push(setTimeout(begin, 1450));
+  }
+
+  el.skip.addEventListener("click", function(){
+    if(S.phase!=="rolling") return;
+    clearRollTimers();
+    finishRoll(rollResult.first, rollResult.second);
+  });
+
+  // ---- reset -----------------------------------------------------------
+  function resetGame(withRoll){
+    endAllPress();
+    clearRollTimers();
+    S.life = []; S.totals = []; deltaSum = [];
+    for(var i=0;i<S.count;i++){ S.life[i]=S.startingLife; S.totals[i]=0; deltaSum[i]=0; if(fadeTimer[i]) clearTimeout(fadeTimer[i]); }
+    S.active=null; S.paused=false; S.turnAccum=0; S.segStart=null; S.phase="idle";
+    for(var j=0;j<S.count;j++){ if(tileEls[j]){ tileEls[j].delta.classList.remove("show"); } }
+    updateTiles();
+    if(withRoll && !CFG.nosplash){
+      startRoll();
+    } else {
+      S.active = pickFirst();
+      S.phase = "playing";
+      S.segStart = Date.now();
+      el.board.setAttribute("data-first-player", String(S.active));
+      el.board.setAttribute("data-second-player", String(nextIndex(S.active)));
+      updateTiles(); updateCoin();
+    }
+    save();
+  }
+
+  // ---- settings sheet --------------------------------------------------
+  function openSheet(){ el.overlay.classList.add("show"); el.sheet.classList.add("show"); }
+  function closeSheet(){ el.overlay.classList.remove("show"); el.sheet.classList.remove("show"); armResetBtn(false); }
+
+  el.settingsOpen.addEventListener("click", function(e){ e.stopPropagation(); openSheet(); });
+  el.overlay.addEventListener("click", closeSheet);
+  el.done.addEventListener("click", closeSheet);
+
+  // count segmented
+  [2,3,4,5,6].forEach(function(n){
+    var b = document.createElement("button");
+    b.textContent = String(n);
+    b.setAttribute("data-testid","count-"+n);
+    b.setAttribute("data-count", String(n));
+    b.addEventListener("click", function(){ setCount(n); });
+    el.countSeg.appendChild(b);
+  });
+  function setCount(n){
+    if(n===S.count){ return; }
+    S.count = n;
+    // grow/shrink players preserving existing
+    var p = S.players.slice(0,n);
+    for(var i=p.length;i<n;i++){ p.push({ name:"Player "+(i+1), color: COLOR_ORDER[i % COLOR_ORDER.length] }); }
+    S.players = p;
+    syncSettingsUI();
+    buildBoard();
+    buildPlayerRows();
+    resetGame(true);
+  }
+
+  // direction segmented
+  el.dirSeg.querySelectorAll("button").forEach(function(b){
+    b.addEventListener("click", function(){
+      S.direction = b.getAttribute("data-dir");
+      syncSettingsUI();
+      if(S.phase==="playing"){ S.active = S.active; } // direction affects future passes
+      save();
+    });
+  });
+
+  // starting life
+  el.lifeDec.addEventListener("click", function(){ S.startingLife = Math.max(1, S.startingLife-1); syncSettingsUI(); save(); });
+  el.lifeInc.addEventListener("click", function(){ S.startingLife = S.startingLife+1; syncSettingsUI(); save(); });
+
+  function buildPlayerRows(){
+    el.playerList.innerHTML = "";
+    for(var i=0;i<S.count;i++){
+      (function(i){
+        var row = document.createElement("div"); row.className="prow";
+        var head = document.createElement("div"); head.className="head";
+
+        var sw = document.createElement("button");
+        sw.className="swatch"; sw.setAttribute("data-testid","player-"+i+"-color");
+        sw.style.background = PALETTE[S.players[i].color];
+        sw.setAttribute("aria-label","Change Player "+(i+1)+" colour");
+
+        var name = document.createElement("input");
+        name.className="name"; name.type="text"; name.value=S.players[i].name;
+        name.setAttribute("data-testid","player-"+i+"-name");
+        name.addEventListener("input", function(){
+          S.players[i].name = name.value || ("Player "+(i+1));
+          if(tileEls[i]){
+            tileEls[i].dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
+            tileEls[i].inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
+          }
+          save();
+        });
+
+        var picker = document.createElement("div"); picker.className="picker";
+        picker.setAttribute("data-testid","player-"+i+"-picker");
+        COLOR_ORDER.forEach(function(cn){
+          var opt=document.createElement("button");
+          opt.className="opt"+(S.players[i].color===cn?" sel":"");
+          opt.style.background=PALETTE[cn];
+          opt.setAttribute("data-testid","player-"+i+"-swatch-"+cn);
+          opt.setAttribute("aria-label",cn);
+          opt.addEventListener("click", function(){
+            S.players[i].color = cn;
+            sw.style.background = PALETTE[cn];
+            applyTileColor(i);
+            if(S.active===i) updateCoin();
+            picker.querySelectorAll(".opt").forEach(function(o){ o.classList.remove("sel"); });
+            opt.classList.add("sel");
+            save();
+          });
+          picker.appendChild(opt);
+        });
+
+        sw.addEventListener("click", function(){ picker.classList.toggle("open"); });
+
+        head.appendChild(sw); head.appendChild(name);
+        row.appendChild(head); row.appendChild(picker);
+        el.playerList.appendChild(row);
+      })(i);
+    }
+  }
+
+  // reset with two-tap confirm
+  var resetArmed = false, resetTimer = null;
+  function armResetBtn(on){
+    resetArmed = on;
+    el.reset.classList.toggle("confirm", on);
+    el.reset.textContent = on ? "Tap again to confirm" : "Reset game";
+    el.reset.setAttribute("data-confirm", on ? "true" : "false");
+    if(resetTimer){ clearTimeout(resetTimer); resetTimer=null; }
+    if(on){ resetTimer = setTimeout(function(){ armResetBtn(false); }, 3000); }
+  }
+  el.reset.addEventListener("click", function(){
+    if(!resetArmed){ armResetBtn(true); return; }
+    armResetBtn(false);
+    closeSheet();
+    resetGame(true);
+  });
+
+  function syncSettingsUI(){
+    el.countSeg.querySelectorAll("button").forEach(function(b){
+      b.classList.toggle("on", +b.getAttribute("data-count")===S.count);
+    });
+    el.dirSeg.querySelectorAll("button").forEach(function(b){
+      b.classList.toggle("on", b.getAttribute("data-dir")===S.direction);
+    });
+    el.lifeVal.textContent = String(S.startingLife);
+  }
+
+  // ---- boot ------------------------------------------------------------
+  function boot(){
+    var saved = load();
+    if(saved){
+      S.count = saved.count || 4;
+      S.startingLife = saved.startingLife || 40;
+      S.direction = saved.direction==="ccw" ? "ccw" : "cw";
+      S.players = (saved.players && saved.players.length)? saved.players : defaultPlayers(S.count);
+      while(S.players.length < S.count) S.players.push({name:"Player "+(S.players.length+1), color:COLOR_ORDER[S.players.length%COLOR_ORDER.length]});
+      S.life = (saved.life && saved.life.length===S.count)? saved.life.slice() : S.players.map(function(){return S.startingLife;});
+      S.totals = (saved.totals && saved.totals.length===S.count)? saved.totals.slice() : S.players.map(function(){return 0;});
+      deltaSum = S.players.map(function(){return 0;});
+      S.active = (typeof saved.active==="number") ? saved.active : 0;
+      S.paused = !!saved.paused;
+      S.turnAccum = saved.turnAccum || 0;
+      S.segStart = S.paused ? null : Date.now();
+      S.phase = "playing";
+      syncSettingsUI(); buildBoard(); buildPlayerRows(); updateCoin();
+    } else {
+      S.players = defaultPlayers(S.count);
+      deltaSum = S.players.map(function(){return 0;});
+      syncSettingsUI(); buildBoard(); buildPlayerRows();
+      resetGame(true);
+    }
+  }
+
+  // minimal debug handle (read-only-ish)
+  window.MTG = {
+    version:"1.0.0",
+    get state(){ return JSON.parse(JSON.stringify({count:S.count,direction:S.direction,active:S.active,paused:S.paused,phase:S.phase,life:S.life,totals:S.totals,startingLife:S.startingLife})); },
+    currentTurnMs:function(){ return currentTurn(); }
+  };
+
+  boot();
+})();
+</script>
+</body>
+</html>
