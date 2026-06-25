@@ -342,13 +342,17 @@
   };
 
   // ---- layout ----------------------------------------------------------
+  // Tuned for a tall portrait phone (e.g. Galaxy S22): never put more than two
+  // tiles in a row, so no tile becomes a thin vertical sliver. Row heights are
+  // weighted by their column count in buildBoard() so every tile ends up with
+  // the same, as-square-as-possible aspect ratio.
   function layoutFor(n){
     switch(n){
       case 2: return [[{i:0,rot:true}],[{i:1}]];
       case 3: return [[{i:0,rot:true}],[{i:1},{i:2}]];
       case 4: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
-      case 5: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3},{i:4}]];
-      case 6: return [[{i:0,rot:true},{i:1,rot:true},{i:2,rot:true}],[{i:3},{i:4},{i:5}]];
+      case 5: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}],[{i:4}]];
+      case 6: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2,rot:true},{i:3}],[{i:4},{i:5}]];
       default: return [[{i:0,rot:true},{i:1,rot:true}],[{i:2},{i:3}]];
     }
   }
@@ -362,6 +366,9 @@
     rows.forEach(function(rowCfg){
       var row = document.createElement("div");
       row.className = "row";
+      // Weight row height by 1/columns so a tile spanning a wider row also gets
+      // a taller row, keeping each tile roughly square on a tall screen.
+      row.style.flex = (1 / rowCfg.length) + " 1 0%";
       rowCfg.forEach(function(c){
         var i = c.i;
         var tile = document.createElement("div");
