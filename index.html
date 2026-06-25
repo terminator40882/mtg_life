@@ -599,6 +599,7 @@
   // pointed-at index and only re-measure (forcing reflow) when it actually
   // changes or when forced (resize / board rebuild).
   var pointerActive = null;
+  var pointerDeg = null; // accumulated angle (unbounded) so we always rotate the short way
   function updatePointer(force){
     var a = (S.phase==="playing" && S.active!=null) ? S.active : null;
     el.pointer.classList.toggle("hidden", a===null);
@@ -610,8 +611,16 @@
     var tr = t.tile.getBoundingClientRect();
     var dx = (tr.left+tr.width/2) - (cr.left+cr.width/2);
     var dy = (tr.top+tr.height/2) - (cr.top+cr.height/2);
-    var deg = Math.atan2(dy, dx) * 180 / Math.PI + 90; // arrow's rest position points up
-    el.pointer.style.transform = "rotate(" + deg + "deg)";
+    var target = Math.atan2(dy, dx) * 180 / Math.PI + 90; // arrow's rest position points up
+    if(pointerDeg===null){
+      pointerDeg = target;
+    } else {
+      // step by the shortest signed angle so the arrow eases to the next seat
+      // instead of unwinding the long way round when the ring wraps
+      var delta = ((target - pointerDeg) % 360 + 540) % 360 - 180;
+      pointerDeg += delta;
+    }
+    el.pointer.style.transform = "rotate(" + pointerDeg + "deg)";
   }
 
   function updateCoin(){
