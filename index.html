@@ -94,6 +94,20 @@
     transition:border-color .25s ease, opacity .2s ease;
   }
   .coin.hidden{opacity:0;pointer-events:none}
+  /* arrow on the ring that rotates to point at the active player's tile,
+     so the active player is identified by position even if colours collide */
+  .coin .pointer{
+    position:absolute;inset:calc(var(--coin-border) * -1);
+    pointer-events:none;z-index:7;transform:rotate(0deg);
+    transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
+  }
+  .coin .pointer.hidden{opacity:0}
+  .coin .pointer::before{
+    content:"";position:absolute;left:50%;top:-7px;transform:translateX(-50%);
+    border-left:11px solid transparent;border-right:11px solid transparent;
+    border-bottom:15px solid #fff;
+    filter:drop-shadow(0 1px 2px rgba(0,0,0,.65));
+  }
   .coin .turn{font-size:clamp(23px,6.4vw,31px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
   .coin .total{font-size:clamp(12px,3.4vw,15px);color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
   .coin.paused .turn,.coin.paused .total{color:var(--danger)}
@@ -171,6 +185,7 @@
   <div class="board" data-testid="board">
     <div id="rows"></div>
     <div class="coin" data-testid="coin" aria-label="Turn timer">
+      <div class="pointer hidden" data-testid="turn-pointer" aria-hidden="true"></div>
       <button class="dots" data-testid="settings-open" aria-label="Open settings"><span></span><span></span><span></span></button>
       <div class="turn" data-testid="turn-time">0:00</div>
       <div class="total" data-testid="total-time">0:00</div>
@@ -321,6 +336,7 @@
     board: document.querySelector('[data-testid="board"]'),
     rows: document.getElementById("rows"),
     coin: document.querySelector('[data-testid="coin"]'),
+    pointer: document.querySelector('[data-testid="turn-pointer"]'),
     turn: document.querySelector('[data-testid="turn-time"]'),
     total: document.querySelector('[data-testid="total-time"]'),
     settingsOpen: document.querySelector('[data-testid="settings-open"]'),
@@ -421,6 +437,7 @@
     });
     updateTiles();
     updateCoin();
+    updatePointer(true); // tile positions changed; re-aim the arrow
   }
 
   function applyTileColor(i){
@@ -511,6 +528,26 @@
     var p = function(x){ return (x<10?"0":"")+x; };
     return h>0 ? (h+":"+p(m)+":"+p(ss)) : (m+":"+p(ss));
   }
+  // Rotate the coin's pointer so it aims at the active player's tile. The tile
+  // position only changes on turn pass / layout change, so we cache the last
+  // pointed-at index and only re-measure (forcing reflow) when it actually
+  // changes or when forced (resize / board rebuild).
+  var pointerActive = null;
+  function updatePointer(force){
+    var a = (S.phase==="playing" && S.active!=null) ? S.active : null;
+    el.pointer.classList.toggle("hidden", a===null);
+    if(a===null){ pointerActive=null; return; }
+    if(!force && a===pointerActive) return;
+    pointerActive = a;
+    var t = tileEls[a]; if(!t) return;
+    var cr = el.coin.getBoundingClientRect();
+    var tr = t.tile.getBoundingClientRect();
+    var dx = (tr.left+tr.width/2) - (cr.left+cr.width/2);
+    var dy = (tr.top+tr.height/2) - (cr.top+cr.height/2);
+    var deg = Math.atan2(dy, dx) * 180 / Math.PI + 90; // arrow's rest position points up
+    el.pointer.style.transform = "rotate(" + deg + "deg)";
+  }
+
   function updateCoin(){
     var rolling = S.phase==="rolling";
     el.coin.classList.toggle("hidden", rolling);
@@ -525,8 +562,10 @@
     el.turn.textContent = fmt(ct);
     var tot = (S.active!=null ? (S.totals[S.active]||0) : 0) + ct;
     el.total.textContent = fmt(tot);
+    updatePointer(false);
   }
   setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
+  window.addEventListener("resize", function(){ updatePointer(true); });
 
   function bankCurrent(){
     if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
