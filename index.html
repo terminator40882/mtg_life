@@ -52,11 +52,17 @@
   .tile.turn::after{
     content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
     padding:8px;
+    /* fallback: fine sRGB stops (older browsers) */
     background:conic-gradient(from var(--rbAngle),
       hsl(0 100% 55%),hsl(30 100% 55%),hsl(60 100% 55%),hsl(90 100% 55%),
       hsl(120 100% 55%),hsl(150 100% 55%),hsl(180 100% 55%),hsl(210 100% 55%),
       hsl(240 100% 55%),hsl(270 100% 55%),hsl(300 100% 55%),hsl(330 100% 55%),
       hsl(360 100% 55%));
+    /* interpolate in HSL hue space: every step stays at full saturation and the
+       same lightness, so there are no dark/dull bands between colours */
+    background:conic-gradient(from var(--rbAngle) in hsl,
+      hsl(0 100% 55%),hsl(60 100% 55%),hsl(120 100% 55%),hsl(180 100% 55%),
+      hsl(240 100% 55%),hsl(300 100% 55%),hsl(360 100% 55%));
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;
     mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
