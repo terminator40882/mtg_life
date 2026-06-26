@@ -45,26 +45,27 @@
     transition:filter .18s ease, box-shadow .2s ease;
   }
   .tile.rot{transform:rotate(180deg)}
-  /* active player's box while their clock runs: a seamless full-saturation
-     rainbow ring that rotates clockwise (conic wheel, red meets red -> no
-     visible start/end; evenly spaced HSL stops -> only vivid colours) */
-  @property --rbAngle{syntax:'<angle>';inherits:false;initial-value:0deg}
-  .tile.turn::after{
-    content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+  /* active player's box while their clock runs: a rainbow ring that spins
+     clockwise. The conic gradient sits on a child that is rotated with
+     transform (robust on mobile, no @property), and the parent masks it to a
+     thin ring. A standard vivid rainbow with matching red ends keeps it
+     seamless. */
+  .tile .rb{
+    position:absolute;inset:0;z-index:2;pointer-events:none;display:none;overflow:hidden;
     padding:8px;
-    /* hand-tuned vivid rainbow: every colour is kept bright (the blue/violet
-       hues are lightened) so no segment looks dark. Start and end are the same
-       red, so the wheel is seamless; fine stops keep transitions continuous. */
-    background:conic-gradient(from var(--rbAngle),
-      #ff2e4d,#ff7a1a,#ffb300,#ffe500,#7ddd00,#00d94a,#00d9b4,#00cfff,
-      #2e9dff,#5b6bff,#8a5cff,#b84dff,#ff4dc4,#ff3d7a,#ff2e4d);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;
     mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     mask-composite:exclude;
+  }
+  .tile.turn .rb{display:block}
+  .tile .rb::before{
+    content:"";position:absolute;left:50%;top:50%;width:320%;aspect-ratio:1;
+    transform:translate(-50%,-50%) rotate(0turn);
+    background:conic-gradient(#ff3b3b,#ff9d00,#ffe000,#34e24a,#16dada,#2d7bff,#9b3dff,#ff3db0,#ff3b3b);
     animation:rbSpin 4s linear infinite;
   }
-  @keyframes rbSpin{to{--rbAngle:360deg}}
+  @keyframes rbSpin{to{transform:translate(-50%,-50%) rotate(1turn)}}
   .tile .life{
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
@@ -479,11 +480,15 @@
       badge.className = "badge";
       badge.setAttribute("data-testid","badge");
 
+      var rb = document.createElement("div");   // rainbow ring for the active player
+      rb.className = "rb";
+
       tile.appendChild(dec);
       tile.appendChild(inc);
       tile.appendChild(delta);
       tile.appendChild(life);
       tile.appendChild(badge);
+      tile.appendChild(rb);
 
       tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc };
       wireZone(dec, i, -1);
