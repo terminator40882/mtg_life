@@ -52,17 +52,12 @@
   .tile.turn::after{
     content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
     padding:8px;
-    /* fallback: fine sRGB stops (older browsers) */
+    /* hand-tuned vivid rainbow: every colour is kept bright (the blue/violet
+       hues are lightened) so no segment looks dark. Start and end are the same
+       red, so the wheel is seamless; fine stops keep transitions continuous. */
     background:conic-gradient(from var(--rbAngle),
-      hsl(0 100% 55%),hsl(30 100% 55%),hsl(60 100% 55%),hsl(90 100% 55%),
-      hsl(120 100% 55%),hsl(150 100% 55%),hsl(180 100% 55%),hsl(210 100% 55%),
-      hsl(240 100% 55%),hsl(270 100% 55%),hsl(300 100% 55%),hsl(330 100% 55%),
-      hsl(360 100% 55%));
-    /* interpolate in HSL hue space: every step stays at full saturation and the
-       same lightness, so there are no dark/dull bands between colours */
-    background:conic-gradient(from var(--rbAngle) in hsl,
-      hsl(0 100% 55%),hsl(60 100% 55%),hsl(120 100% 55%),hsl(180 100% 55%),
-      hsl(240 100% 55%),hsl(300 100% 55%),hsl(360 100% 55%));
+      #ff2e4d,#ff7a1a,#ffb300,#ffe500,#7ddd00,#00d94a,#00d9b4,#00cfff,
+      #2e9dff,#5b6bff,#8a5cff,#b84dff,#ff4dc4,#ff3d7a,#ff2e4d);
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;
     mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
@@ -514,17 +509,29 @@
     updateCoin();
   }
 
-  // Centre each number in its box and size it to fit (reserve room for up to
-  // 3 digits). The timer bar has its own band, so nothing overlaps the boxes.
-  // The +/- tap split still follows each box's longer side.
+  // Align each number along the box's longest edge: clearly tall boxes get a
+  // quarter turn so the number runs vertically (left column reads from the
+  // left, right column from the right); near-square / wide boxes stay upright.
+  // Sized for up to 3 digits. The timer bar has its own band, nothing overlaps.
   function applyTileOrientation(){
+    var b = el.board.getBoundingClientRect();
+    var midX = b.left + b.width/2;
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
       var r = t.tile.getBoundingClientRect();
-      t.tile.classList.toggle("tall", r.height > r.width);
-      var px = Math.min(r.height*0.6, r.width/1.7, 200);   // upright, ~3 digits
-      t.life.style.fontSize = Math.round(Math.max(20, px)) + "px";
-      t.life.style.transform = "";   // centred; the tile's own 180deg handles facing
+      t.tile.classList.toggle("tall", r.height > r.width);   // drives the +/- split
+      var rot = t.tile.classList.contains("rot");
+      if(r.height > r.width*1.1){
+        // rotated: glyph height bound by box width, number length by box height
+        var px = Math.min(r.width*0.82, r.height/1.9, 240);
+        t.life.style.fontSize = Math.round(Math.max(20, px)) + "px";
+        var leftCol = (r.left + r.width/2) < midX - 1;
+        t.life.style.transform = "rotate(" + ((leftCol ? 90 : -90) - (rot ? 180 : 0)) + "deg)";
+      } else {
+        var px2 = Math.min(r.height*0.6, r.width/1.7, 200);
+        t.life.style.fontSize = Math.round(Math.max(20, px2)) + "px";
+        t.life.style.transform = "";
+      }
     }
   }
 
