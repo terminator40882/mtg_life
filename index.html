@@ -74,8 +74,9 @@
   @keyframes rbSpin{to{transform:translate(-50%,-50%) rotate(1turn)}}
   .tile .life{
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
-    font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
+    font-variant-numeric:tabular-nums;letter-spacing:0;text-align:center;
     pointer-events:none;opacity:.97;position:relative;z-index:3;
+    transform-origin:center center;
     transition:transform .2s ease;
   }
   /* tall tiles: the number is rotated a quarter turn so it runs along the
@@ -99,6 +100,12 @@
   .tile.tall .zone .sign{top:auto;bottom:auto;left:50%;right:auto;transform:translateX(-50%)}
   .tile.tall .zone.inc .sign{top:8%}
   .tile.tall .zone.dec .sign{bottom:8%}
+  /* per-seat flip so − is always on the player's left, + on their right:
+     swap which screen end each zone (and its sign) occupies */
+  .tile.tall.zflip .zone.inc{top:auto;bottom:0}
+  .tile.tall.zflip .zone.dec{bottom:auto;top:0}
+  .tile.tall.zflip .zone.inc .sign{top:auto;bottom:8%}
+  .tile.tall.zflip .zone.dec .sign{bottom:auto;top:8%}
   .zone.pressing .sign{opacity:.32}
   .zone:focus-visible{box-shadow:inset 0 0 0 3px rgba(255,255,255,.5)}
   /* +/- change chip; position is set per tile in JS (inner corner, toward the
@@ -140,7 +147,8 @@
     flex:0 0 auto;width:100%;height:clamp(58px,9.5vh,80px);border-radius:14px;
     background:var(--coin-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:2px solid var(--active);
-    display:flex;flex-direction:row;align-items:center;justify-content:center;gap:14px;
+    display:flex;flex-direction:row;align-items:center;justify-content:space-between;
+    padding:0 clamp(10px,3.5vw,22px);
     position:relative;z-index:5;cursor:pointer;touch-action:none;
     box-shadow:0 6px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
     transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
@@ -165,9 +173,18 @@
     filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
   }
   @keyframes ptrHue{ from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
-  .coin .turn{font-size:clamp(24px,6.6vw,34px);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.01em}
-  .coin .total{font-size:clamp(12px,3.4vw,16px);color:var(--muted);font-variant-numeric:tabular-nums}
-  .coin.paused .turn,.coin.paused .total{color:var(--danger)}
+  /* time shown vertically (minutes over seconds), a copy at each end of the bar
+     so the left- and right-edge players can both read it */
+  .coin .timegroup{display:flex;flex-direction:row;align-items:center;gap:clamp(10px,3.4vw,20px)}
+  .coin .tstack{
+    display:flex;flex-direction:column;align-items:center;line-height:1;
+    font-variant-numeric:tabular-nums;letter-spacing:.01em;
+  }
+  .coin .tstack.turn .mm{font-size:clamp(20px,5.6vw,30px);font-weight:800}
+  .coin .tstack.turn .ss{font-size:clamp(16px,4.4vw,24px);font-weight:800;color:var(--muted)}
+  .coin .tstack.total .mm{font-size:clamp(12px,3.2vw,15px);font-weight:700;color:var(--muted)}
+  .coin .tstack.total .ss{font-size:clamp(11px,2.8vw,14px);font-weight:700;color:var(--muted);opacity:.85}
+  .coin.paused .tstack .mm,.coin.paused .tstack .ss{color:var(--danger)}
 
   #hint{
     position:fixed;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
@@ -240,8 +257,14 @@
     <div id="rows"></div>
     <div class="coin" data-testid="coin" aria-label="Turn timer">
       <div class="pointer hidden" data-testid="turn-pointer" aria-hidden="true"></div>
-      <div class="turn" data-testid="turn-time">0:00</div>
-      <div class="total" data-testid="total-time">0:00</div>
+      <div class="timegroup left">
+        <div class="tstack turn" data-testid="turn-time"><span class="mm">0</span><span class="ss">00</span></div>
+        <div class="tstack total" data-testid="total-time"><span class="mm">0</span><span class="ss">00</span></div>
+      </div>
+      <div class="timegroup right" aria-hidden="true">
+        <div class="tstack turn"><span class="mm">0</span><span class="ss">00</span></div>
+        <div class="tstack total"><span class="mm">0</span><span class="ss">00</span></div>
+      </div>
     </div>
   </div>
 </div>
@@ -437,6 +460,8 @@
     pointer: document.querySelector('[data-testid="turn-pointer"]'),
     turn: document.querySelector('[data-testid="turn-time"]'),
     total: document.querySelector('[data-testid="total-time"]'),
+    turnStacks: document.querySelectorAll('.coin .tstack.turn'),
+    totalStacks: document.querySelectorAll('.coin .tstack.total'),
     overlay: document.querySelector('[data-testid="overlay"]'),
     sheet: document.querySelector('[data-testid="settings"]'),
     countSeg: document.getElementById("countSeg"),
@@ -581,33 +606,44 @@
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
       var r = t.tile.getBoundingClientRect();
-      t.tile.classList.toggle("tall", r.height > r.width);   // drives the +/- split
+      var tall = r.height > r.width*1.1;
       var rot = t.tile.classList.contains("rot");
-      if(r.height > r.width*1.1){
+      var leftCol = (r.left + r.width/2) < midX;
+      // local quarter-turn applied to the number (− parent's 180° for the top
+      // group) so it reads upright for the seat on that long edge
+      var theta = tall ? ((leftCol ? 90 : -90) - (rot ? 180 : 0)) : 0;
+      t.tile.classList.toggle("tall", r.height > r.width);   // drives the +/- split
+      // flip the +/- bands so − is on the player's left, + on their right for
+      // BOTH the left-edge and right-edge seats (default lands correct only when
+      // leftCol === rot; flip the other diagonal)
+      t.tile.classList.toggle("zflip", tall && (leftCol !== rot));
+      if(tall){
         // rotated: glyph height bound by box width, number length by box height
         var px = Math.min(r.width*0.82, r.height/1.9, 240);
         t.life.style.fontSize = Math.round(Math.max(20, px)) + "px";
-        var leftCol = (r.left + r.width/2) < midX - 1;
-        t.life.style.transform = "rotate(" + ((leftCol ? 90 : -90) - (rot ? 180 : 0)) + "deg)";
+        t.life.style.transform = "rotate(" + theta + "deg)";
       } else {
         var px2 = Math.min(r.height*0.6, r.width/1.7, 200);
         t.life.style.fontSize = Math.round(Math.max(20, px2)) + "px";
         t.life.style.transform = "";
       }
 
-      // delta chip in the box's inner corner (the one nearest the timer centre).
-      // The timer-facing edge is always the tile's LOCAL top (top group is
-      // rotated 180); choose the inner horizontal side by group + column.
+      // delta chip in the box's inner corner (nearest the timer), rotated to the
+      // SAME orientation as the number so the seated player reads it upright too.
+      // Anchored by its centre + translate(-50%,-50%) so the rotation can't push
+      // it off the tile. The timer-facing edge is always the tile's LOCAL top.
       var ds = t.delta.style;
-      ds.top = "12px"; ds.bottom = "auto";
-      if(r.width > b.width*0.7){            // full-width box -> inner centre
-        ds.left = "50%"; ds.right = "auto"; ds.transform = "translateX(-50%)";
-      } else {
-        var lc = (r.left + r.width/2) < midX;
-        if(rot === lc){ ds.left = "12px"; ds.right = "auto"; }  // top-left / bottom-right
-        else          { ds.right = "12px"; ds.left = "auto"; }  // top-right / bottom-left
-        ds.transform = "none";
+      var inset = 34;
+      ds.top = inset + "px"; ds.bottom = "auto"; ds.right = "auto";
+      ds.transformOrigin = "center center";
+      if(r.width > b.width*0.7){            // full-width box -> inner centre, upright
+        ds.left = "50%";
+      } else if(rot === leftCol){           // local top-left corner is the inner one
+        ds.left = inset + "px";
+      } else {                              // local top-right corner is the inner one
+        ds.left = "calc(100% - " + inset + "px)";
       }
+      ds.transform = "translate(-50%,-50%) rotate(" + theta + "deg)";
     }
   }
 
@@ -701,6 +737,23 @@
     var p = function(x){ return (x<10?"0":"")+x; };
     return h>0 ? (h+":"+p(m)+":"+p(ss)) : (m+":"+p(ss));
   }
+  // vertical display: top line = minutes (h:mm once past an hour), bottom = seconds
+  function fmtParts(ms){
+    var s = Math.floor(ms/1000);
+    var h = Math.floor(s/3600);
+    var m = Math.floor((s%3600)/60);
+    var ss = s%60;
+    var p = function(x){ return (x<10?"0":"")+x; };
+    return { mm: (h>0 ? (h+":"+p(m)) : String(m)), ss: p(ss) };
+  }
+  function setStacks(stacks, ms){
+    var parts = fmtParts(ms);
+    for(var i=0;i<stacks.length;i++){
+      var mm = stacks[i].querySelector(".mm"), ss = stacks[i].querySelector(".ss");
+      if(mm && mm.textContent !== parts.mm) mm.textContent = parts.mm;
+      if(ss && ss.textContent !== parts.ss) ss.textContent = parts.ss;
+    }
+  }
   // Rotate the coin's pointer so it aims at the active player's tile. The tile
   // position only changes on turn pass / layout change, so we cache the last
   // pointed-at index and only re-measure (forcing reflow) when it actually
@@ -747,9 +800,9 @@
       el.coin.style.background = "";
     }
     var ct = (S.phase==="playing" && S.active!=null) ? currentTurn() : 0;
-    el.turn.textContent = fmt(ct);
+    setStacks(el.turnStacks, ct);
     var tot = (S.active!=null ? (S.totals[S.active]||0) : 0) + ct;
-    el.total.textContent = fmt(tot);
+    setStacks(el.totalStacks, tot);
     updatePointer(false);
   }
   setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
