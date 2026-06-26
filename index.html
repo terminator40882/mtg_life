@@ -144,12 +144,11 @@
   /* central timer bar: a full-width rectangle in the flow between the top and
      bottom player groups (Design A) */
   .coin{
-    flex:0 0 auto;width:100%;height:clamp(78px,13vh,104px);border-radius:14px;
+    flex:0 0 auto;width:100%;height:clamp(58px,9.5vh,78px);border-radius:14px;
     background:var(--coin-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
     border:2px solid var(--active);
-    display:flex;flex-direction:row;align-items:center;justify-content:space-between;
-    padding:0 clamp(10px,3.5vw,22px);
-    position:relative;z-index:5;cursor:pointer;touch-action:none;
+    display:flex;flex-direction:row;align-items:center;justify-content:center;
+    position:relative;z-index:5;cursor:pointer;touch-action:none;overflow:hidden;
     box-shadow:0 6px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
     transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
   }
@@ -173,19 +172,25 @@
     filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
   }
   @keyframes ptrHue{ from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
-  /* time shown vertically as a single stacked column — turn minutes over turn
-     seconds over total minutes over total seconds (e.g. 30 / 59 / 12 / 59) —
-     with a copy at each end of the bar so the left- and right-edge players can
-     both read it */
-  .coin .timegroup{display:flex;flex-direction:column;align-items:center;gap:clamp(3px,0.8vh,7px)}
+  /* time shown as a stacked column (turn minutes over seconds over total minutes
+     over seconds, e.g. 30 / 59 / 12 / 59) that is ROTATED a quarter turn so it
+     faces the players seated on the long edges — a mirrored copy at each end of
+     the bar so the left- and right-edge players can both read it */
+  .coin .timegroup{
+    position:absolute;top:50%;
+    display:flex;flex-direction:column;align-items:center;line-height:1;
+    gap:clamp(2px,0.6vh,5px);
+  }
+  .coin .timegroup.left{left:clamp(44px,12vw,58px);transform:translate(-50%,-50%) rotate(90deg)}
+  .coin .timegroup.right{right:clamp(44px,12vw,58px);transform:translate(50%,-50%) rotate(-90deg)}
   .coin .tstack{
     display:flex;flex-direction:column;align-items:center;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:.01em;
   }
-  .coin .tstack.turn .mm{font-size:clamp(20px,5.2vw,28px);font-weight:800}
-  .coin .tstack.turn .ss{font-size:clamp(17px,4.4vw,23px);font-weight:800;color:var(--muted)}
-  .coin .tstack.total .mm{font-size:clamp(12px,3vw,15px);font-weight:700;color:var(--muted)}
-  .coin .tstack.total .ss{font-size:clamp(11px,2.8vw,14px);font-weight:700;color:var(--muted);opacity:.85}
+  .coin .tstack.turn .mm{font-size:clamp(18px,4.8vw,24px);font-weight:800}
+  .coin .tstack.turn .ss{font-size:clamp(15px,4vw,20px);font-weight:800;color:var(--muted)}
+  .coin .tstack.total .mm{font-size:clamp(11px,2.8vw,14px);font-weight:700;color:var(--muted)}
+  .coin .tstack.total .ss{font-size:clamp(10px,2.6vw,13px);font-weight:700;color:var(--muted);opacity:.85}
   .coin.paused .tstack .mm,.coin.paused .tstack .ss{color:var(--danger)}
 
   #hint{
@@ -638,8 +643,8 @@
       var inset = 34;
       ds.top = inset + "px"; ds.bottom = "auto"; ds.right = "auto";
       ds.transformOrigin = "center center";
-      if(r.width > b.width*0.7){            // full-width box -> inner centre, upright
-        ds.left = "50%";
+      if(r.width > b.width*0.7){            // full-width box (5th player) -> top-right
+        ds.left = "calc(100% - " + inset + "px)";
       } else if(rot === leftCol){           // local top-left corner is the inner one
         ds.left = inset + "px";
       } else {                              // local top-right corner is the inner one
