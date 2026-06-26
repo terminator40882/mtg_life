@@ -45,11 +45,11 @@
     transition:filter .18s ease, box-shadow .2s ease;
   }
   .tile.rot{transform:rotate(180deg)}
-  /* active player's box while their clock runs: an animated rainbow ring.
-     A flowing LINEAR gradient is used on purpose (no conic gradient): mobile
-     Chromium browsers render a dark band at the conic seam, so we avoid conic
-     entirely. The parent masks the gradient to a thin ring; the gradient
-     scrolls diagonally and its red ends match, so the flow is continuous. */
+  /* active player's box while their clock runs: a rainbow ring that spins
+     clockwise. The conic gradient sits on a child that is rotated with
+     transform (robust on mobile, no @property), and the parent masks it to a
+     thin ring. A standard vivid rainbow with matching red ends keeps it
+     seamless. */
   .tile .rb{
     position:absolute;inset:0;z-index:2;pointer-events:none;display:none;overflow:hidden;
     padding:8px;
@@ -60,13 +60,12 @@
   }
   .tile.turn .rb{display:block}
   .tile .rb::before{
-    content:"";position:absolute;inset:0;
-    background:linear-gradient(60deg,
-      #ff3b3b,#ff9d00,#ffe000,#34e24a,#16dada,#2d7bff,#9b3dff,#ff3db0,#ff3b3b);
-    background-size:200% 200%;
-    animation:rbFlow 5s linear infinite;
+    content:"";position:absolute;left:50%;top:50%;width:320%;aspect-ratio:1;
+    transform:translate(-50%,-50%) rotate(0turn);
+    background:conic-gradient(#ff3b3b,#ff9d00,#ffe000,#34e24a,#16dada,#2d7bff,#9b3dff,#ff3db0,#ff3b3b);
+    animation:rbSpin 4s linear infinite;
   }
-  @keyframes rbFlow{from{background-position:0% 0%}to{background-position:200% 200%}}
+  @keyframes rbSpin{to{transform:translate(-50%,-50%) rotate(1turn)}}
   .tile .life{
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
