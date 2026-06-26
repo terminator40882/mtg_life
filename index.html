@@ -4,7 +4,13 @@
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
 <meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Cmdr Life" />
 <meta name="theme-color" content="#0a0c0f" />
+<link rel="manifest" href="manifest.webmanifest" />
+<link rel="apple-touch-icon" href="icon-192.png" />
+<link rel="icon" type="image/png" href="icon-192.png" />
 <title>Commander life</title>
 <style>
   :root{
@@ -191,6 +197,8 @@
   .stepper button{width:34px;height:32px;border:0;border-radius:8px;background:transparent;color:#fff;font-size:20px;cursor:pointer}
   .stepper button:active{background:#3a3f49}
   .stepper .val{min-width:34px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
+  .instbtn{border:0;background:#2d7bff;color:#fff;font:inherit;font-size:14px;font-weight:700;padding:9px 18px;border-radius:10px;cursor:pointer}
+  .instbtn:active{filter:brightness(.9)}
   #playerList{margin-top:4px}
   .prow{padding:11px 2px;border-top:1px solid var(--line)}
   .prow .head{display:flex;align-items:center;gap:12px}
@@ -261,6 +269,10 @@
       <button data-testid="dir-cw" data-dir="cw">↻ CW</button>
       <button data-testid="dir-ccw" data-dir="ccw">↺ CCW</button>
     </div>
+  </div>
+  <div class="srow" id="installRow" style="display:none">
+    <span class="lab">Install app (fullscreen)</span>
+    <button class="instbtn" data-testid="install-btn">Install</button>
   </div>
   <div id="playerList"></div>
   <button class="reset" data-testid="reset">Reset game</button>
@@ -1021,6 +1033,42 @@
   };
 
   boot();
+
+  // ---- PWA: install option + service worker ----------------------------
+  (function(){
+    function isStandalone(){
+      return window.matchMedia('(display-mode: standalone)').matches
+          || window.matchMedia('(display-mode: fullscreen)').matches
+          || window.matchMedia('(display-mode: minimal-ui)').matches
+          || window.navigator.standalone === true;
+    }
+    var installRow = document.getElementById('installRow');
+    var installBtn = document.querySelector('[data-testid="install-btn"]');
+    var deferred = null;
+    window.addEventListener('beforeinstallprompt', function(e){
+      e.preventDefault();
+      deferred = e;
+      if(installRow && !isStandalone()) installRow.style.display = '';
+    });
+    if(installBtn) installBtn.addEventListener('click', function(){
+      if(!deferred) return;
+      deferred.prompt();
+      deferred.userChoice.then(function(c){
+        if(c && c.outcome === 'accepted' && installRow) installRow.style.display = 'none';
+        deferred = null;
+      }).catch(function(){ deferred = null; });
+    });
+    window.addEventListener('appinstalled', function(){
+      if(installRow) installRow.style.display = 'none';
+      deferred = null;
+    });
+
+    if('serviceWorker' in navigator){
+      window.addEventListener('load', function(){
+        navigator.serviceWorker.register('sw.js').catch(function(){});
+      });
+    }
+  })();
 })();
 </script>
 </body>
