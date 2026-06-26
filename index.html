@@ -110,25 +110,27 @@
   .board.rolling .tile.spot{filter:none;box-shadow:inset 0 0 0 4px rgba(255,255,255,.85)}
   .board.rolling .tile.first{filter:none;box-shadow:inset 0 0 0 5px #fff}
 
+  /* central timer bar: a full-width rectangle in the flow between the top and
+     bottom player groups (Design A) */
   .coin{
-    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
-    width:var(--coin);height:var(--coin);border-radius:50%;
+    flex:0 0 auto;width:100%;height:clamp(58px,9.5vh,80px);border-radius:14px;
     background:var(--coin-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-    border:var(--coin-border) solid var(--active);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    z-index:5;cursor:pointer;touch-action:none;
-    box-shadow:0 10px 34px rgba(0,0,0,.45), inset 0 1px 0 rgba(255,255,255,.06);
+    border:2px solid var(--active);
+    display:flex;flex-direction:row;align-items:center;justify-content:center;gap:14px;
+    position:relative;z-index:5;cursor:pointer;touch-action:none;
+    box-shadow:0 6px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
     transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
   }
   .coin.hidden{opacity:0;pointer-events:none}
   /* arrow on the ring that rotates to point at the active player's tile,
      so the active player is identified by position even if colours collide */
-  .coin .pointer{
+  /* directional arrow is not used in the bar layout (active player is shown by
+     the rainbow box border and the bar's colour) */
+  .coin .pointer{display:none}
+  .coin .pointer_unused{
     position:absolute;inset:calc(var(--coin-border) * -1);
     pointer-events:none;z-index:7;transform:rotate(0deg);
     transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
-    /* continuously sweep the arrow through the full hue spectrum;
-       cycle length is configurable via --ptr-cycle */
     animation:ptrHue var(--ptr-cycle,6s) linear infinite;
   }
   .coin .pointer.hidden{opacity:0}
@@ -139,8 +141,8 @@
     filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
   }
   @keyframes ptrHue{ from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
-  .coin .turn{font-size:clamp(23px,6.4vw,31px);font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em}
-  .coin .total{font-size:clamp(12px,3.4vw,15px);color:var(--muted);font-variant-numeric:tabular-nums;margin-top:3px}
+  .coin .turn{font-size:clamp(24px,6.6vw,34px);font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:.01em}
+  .coin .total{font-size:clamp(12px,3.4vw,16px);color:var(--muted);font-variant-numeric:tabular-nums}
   .coin.paused .turn,.coin.paused .total{color:var(--danger)}
 
   #hint{
@@ -243,14 +245,6 @@
       <button data-testid="delta-dec" aria-label="Decrease delta fade time">–</button>
       <span class="val" data-testid="delta-val">10s</span>
       <button data-testid="delta-inc" aria-label="Increase delta fade time">+</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Turn arrow cycle</span>
-    <div class="stepper">
-      <button data-testid="ptr-dec" aria-label="Decrease arrow colour cycle time">–</button>
-      <span class="val" data-testid="ptr-val">6s</span>
-      <button data-testid="ptr-inc" aria-label="Increase arrow colour cycle time">+</button>
     </div>
   </div>
   <div class="srow">
@@ -414,9 +408,6 @@
     deltaVal: document.querySelector('[data-testid="delta-val"]'),
     deltaDec: document.querySelector('[data-testid="delta-dec"]'),
     deltaInc: document.querySelector('[data-testid="delta-inc"]'),
-    ptrVal: document.querySelector('[data-testid="ptr-val"]'),
-    ptrDec: document.querySelector('[data-testid="ptr-dec"]'),
-    ptrInc: document.querySelector('[data-testid="ptr-inc"]'),
     playerList: document.getElementById("playerList"),
     reset: document.querySelector('[data-testid="reset"]'),
     done: document.querySelector('[data-testid="settings-done"]'),
@@ -424,19 +415,18 @@
     skip: document.querySelector('[data-testid="skip"]')
   };
 
-  // ---- layout ----------------------------------------------------------
-  // Boxes fill the whole viewport; the coin sits in the centre and overlaps
-  // where boxes meet. Numbers are then sized and shifted clear of the coin in
-  // applyTileOrientation(). Rows above the middle face the top edge (rotated
-  // 180); row heights are weighted by column count so every box has equal area.
+  // ---- layout (Design A) -----------------------------------------------
+  // A full-width timer bar splits the screen into a top group and a bottom
+  // group of player boxes. Top group faces the top edge (rotated 180). Numbers
+  // are centred in each box; the bar has its own space so nothing is covered.
   function layoutFor(n){
     switch(n){
-      case 2: return [[{i:0,rot:1}],[{i:1}]];
-      case 3: return [[{i:0,rot:1}],[{i:1},{i:2}]];
-      case 4: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}]];
-      case 5: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}],[{i:4}]];
-      case 6: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2,rot:1},{i:3}],[{i:4},{i:5}]];
-      default: return [[{i:0,rot:1},{i:1,rot:1}],[{i:2},{i:3}]];
+      case 2: return { top:[0],     bottom:[1] };
+      case 3: return { top:[0],     bottom:[1,2] };
+      case 4: return { top:[0,1],   bottom:[2,3] };
+      case 5: return { top:[0,1],   bottom:[2,3,4] };
+      case 6: return { top:[0,1,2], bottom:[3,4,5] };
+      default:return { top:[0,1],   bottom:[2,3] };
     }
   }
 
@@ -445,119 +435,84 @@
   function buildBoard(){
     el.rows.innerHTML = "";
     tileEls = [];
-    var rows = layoutFor(S.count);
-    rows.forEach(function(rowCfg){
+    var L = layoutFor(S.count);
+
+    function makeTile(i, rot){
+      var tile = document.createElement("div");
+      tile.className = "tile" + (rot ? " rot" : "");
+      tile.setAttribute("data-testid","tile");
+      tile.setAttribute("data-player-index", String(i));
+      tile.setAttribute("data-rotated", rot ? "true" : "false");
+
+      var dec = document.createElement("div");
+      dec.className = "zone dec";
+      dec.setAttribute("data-testid","dec");
+      dec.setAttribute("role","button");
+      dec.setAttribute("tabindex","0");
+      dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
+      dec.innerHTML = '<span class="sign">–</span>';
+
+      var inc = document.createElement("div");
+      inc.className = "zone inc";
+      inc.setAttribute("data-testid","inc");
+      inc.setAttribute("role","button");
+      inc.setAttribute("tabindex","0");
+      inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
+      inc.innerHTML = '<span class="sign">+</span>';
+
+      var delta = document.createElement("div");
+      delta.className = "delta";
+      delta.setAttribute("data-testid","delta");
+
+      var life = document.createElement("div");
+      life.className = "life";
+      life.setAttribute("data-testid","life");
+
+      var badge = document.createElement("div");
+      badge.className = "badge";
+      badge.setAttribute("data-testid","badge");
+
+      tile.appendChild(dec);
+      tile.appendChild(inc);
+      tile.appendChild(delta);
+      tile.appendChild(life);
+      tile.appendChild(badge);
+
+      tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc };
+      wireZone(dec, i, -1);
+      wireZone(inc, i, +1);
+      applyTileColor(i);
+      return tile;
+    }
+    function makeRow(indices, rot){
       var row = document.createElement("div");
       row.className = "row";
-      // Weight row height by its column count so every box has the same area
-      // (box area = (width/cols) * (height ~ cols) = constant).
-      row.style.flex = rowCfg.length + " 1 0%";
-      rowCfg.forEach(function(c){
-        var i = c.i, rot = !!c.rot;
-        var tile = document.createElement("div");
-        tile.className = "tile" + (rot ? " rot" : "");
-        tile.setAttribute("data-testid","tile");
-        tile.setAttribute("data-player-index", String(i));
-        tile.setAttribute("data-rotated", rot ? "true" : "false");
+      indices.forEach(function(i){ row.appendChild(makeTile(i, rot)); });
+      return row;
+    }
 
-        var dec = document.createElement("div");
-        dec.className = "zone dec";
-        dec.setAttribute("data-testid","dec");
-        dec.setAttribute("role","button");
-        dec.setAttribute("tabindex","0");
-        dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
-        dec.innerHTML = '<span class="sign">–</span>';
+    // top group, then the timer bar, then the bottom group
+    el.rows.appendChild(makeRow(L.top, true));
+    el.rows.appendChild(el.coin);   // move the timer bar into the flow
+    el.rows.appendChild(makeRow(L.bottom, false));
 
-        var inc = document.createElement("div");
-        inc.className = "zone inc";
-        inc.setAttribute("data-testid","inc");
-        inc.setAttribute("role","button");
-        inc.setAttribute("tabindex","0");
-        inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
-        inc.innerHTML = '<span class="sign">+</span>';
-
-        var delta = document.createElement("div");
-        delta.className = "delta";
-        delta.setAttribute("data-testid","delta");
-
-        var life = document.createElement("div");
-        life.className = "life";
-        life.setAttribute("data-testid","life");
-
-        var badge = document.createElement("div");
-        badge.className = "badge";
-        badge.setAttribute("data-testid","badge");
-
-        tile.appendChild(dec);
-        tile.appendChild(inc);
-        tile.appendChild(delta);
-        tile.appendChild(life);
-        tile.appendChild(badge);
-        row.appendChild(tile);
-
-        tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc };
-        wireZone(dec, i, -1);
-        wireZone(inc, i, +1);
-        applyTileColor(i);
-      });
-      el.rows.appendChild(row);
-    });
     updateTiles();
     computeSeatOrder();      // tiles exist now; derive the clockwise seating ring
-    applyTileOrientation();  // size/position numbers clear of the coin
+    applyTileOrientation();  // centre + size each number
     updateCoin();
-    updatePointer(true);     // tile positions changed; re-aim the arrow
   }
 
-  // For each box: decide the +/- split orientation (tall => top/bottom), then
-  // size and shift its number into the largest part of the box that the centre
-  // coin does NOT cover, so numbers stay as large as possible yet never hidden
-  // behind the coin. Tall boxes keep the quarter-turn, column-based facing.
+  // Centre each number in its box and size it to fit (reserve room for up to
+  // 3 digits). The timer bar has its own band, so nothing overlaps the boxes.
+  // The +/- tap split still follows each box's longer side.
   function applyTileOrientation(){
-    var b = el.board.getBoundingClientRect();
-    var midX = b.left + b.width/2;
-    var coin = el.coin.getBoundingClientRect();
-    var Cx = coin.left + coin.width/2, Cy = coin.top + coin.height/2;
-    var Cr = coin.width/2 + 12;                 // coin radius + clearance
-    var kx0 = Cx-Cr, kx1 = Cx+Cr, ky0 = Cy-Cr, ky1 = Cy+Cr; // keep-out square
     for(var i=0;i<S.count;i++){
       var t = tileEls[i]; if(!t) continue;
       var r = t.tile.getBoundingClientRect();
-      var tall = r.height > r.width;
-      t.tile.classList.toggle("tall", tall);
-
-      // largest clear sub-rectangle of the box that avoids the coin keep-out
-      var clr = { x0:r.left, y0:r.top, x1:r.right, y1:r.bottom };
-      if(r.right>kx0 && r.left<kx1 && r.bottom>ky0 && r.top<ky1){
-        var leftW=kx0-r.left, rightW=r.right-kx1, topH=ky0-r.top, botH=r.bottom-ky1;
-        var besideArea = Math.max(leftW,rightW) * r.height;
-        var aboveArea  = Math.max(topH,botH)  * r.width;
-        if(besideArea >= aboveArea){
-          if(leftW>=rightW) clr.x1=kx0; else clr.x0=kx1;
-        } else {
-          if(topH>=botH) clr.y1=ky0; else clr.y0=ky1;
-        }
-      }
-      var cw = Math.max(12, clr.x1-clr.x0), ch = Math.max(12, clr.y1-clr.y0);
-
-      // size to the clear rect; reserve room for up to 3 digits so growing
-      // life totals stay clear without re-laying out on every change
-      var px = tall ? Math.min(cw*0.84, ch/1.9, 260)
-                    : Math.min(ch*0.84, cw/1.9, 260);
+      t.tile.classList.toggle("tall", r.height > r.width);
+      var px = Math.min(r.height*0.6, r.width/1.7, 200);   // upright, ~3 digits
       t.life.style.fontSize = Math.round(Math.max(20, px)) + "px";
-
-      // translate the number to the centre of the clear rect (screen space),
-      // converted to the tile's local frame (its 180deg rotation flips signs)
-      var sx = (clr.x0+clr.x1)/2 - (r.left+r.width/2);
-      var sy = (clr.y0+clr.y1)/2 - (r.top+r.height/2);
-      var rot = t.tile.classList.contains("rot");
-      var lx = rot ? -sx : sx, ly = rot ? -sy : sy;
-      var rotDeg = 0;
-      if(tall){
-        var leftCol = (r.left+r.width/2) < midX - 1;
-        rotDeg = (leftCol ? 90 : -90) - (rot ? 180 : 0);
-      }
-      t.life.style.transform = "translate("+Math.round(lx)+"px,"+Math.round(ly)+"px) rotate("+rotDeg+"deg)";
+      t.life.style.transform = "";   // centred; the tile's own 180deg handles facing
     }
   }
 
@@ -925,17 +880,6 @@
   el.deltaDec.addEventListener("click", function(){ stepDeltaFade(-1); });
   el.deltaInc.addEventListener("click", function(){ stepDeltaFade(+1); });
 
-  // turn-arrow hue cycle length (seconds); 1s..30s
-  function applyPtrCycle(){
-    document.documentElement.style.setProperty("--ptr-cycle", S.ptrCycleSec + "s");
-  }
-  function stepPtrCycle(deltaSec){
-    S.ptrCycleSec = Math.max(1, Math.min(30, S.ptrCycleSec + deltaSec));
-    applyPtrCycle(); syncSettingsUI(); save();
-  }
-  el.ptrDec.addEventListener("click", function(){ stepPtrCycle(-1); });
-  el.ptrInc.addEventListener("click", function(){ stepPtrCycle(+1); });
-
   function buildPlayerRows(){
     el.playerList.innerHTML = "";
     for(var i=0;i<S.count;i++){
@@ -1015,7 +959,6 @@
     });
     el.lifeVal.textContent = String(S.startingLife);
     el.deltaVal.textContent = Math.round(S.deltaFadeMs/1000) + "s";
-    el.ptrVal.textContent = S.ptrCycleSec + "s";
   }
 
   // ---- boot ------------------------------------------------------------
@@ -1044,7 +987,6 @@
       syncSettingsUI(); buildBoard(); buildPlayerRows();
       resetGame(true);
     }
-    applyPtrCycle();
   }
 
   // minimal debug handle (read-only-ish)
