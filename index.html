@@ -45,19 +45,25 @@
     transition:filter .18s ease, box-shadow .2s ease;
   }
   .tile.rot{transform:rotate(180deg)}
-  /* active player's box while their clock runs: flowing rainbow-wave border */
+  /* active player's box while their clock runs: a seamless full-saturation
+     rainbow ring that rotates clockwise (conic wheel, red meets red -> no
+     visible start/end; evenly spaced HSL stops -> only vivid colours) */
+  @property --rbAngle{syntax:'<angle>';inherits:false;initial-value:0deg}
   .tile.turn::after{
     content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
     padding:8px;
-    background:linear-gradient(120deg,#ff004c,#ff8a00,#ffe600,#27ff61,#00e6ff,#3b6bff,#c14bff,#ff004c);
-    background-size:300% 300%;
+    background:conic-gradient(from var(--rbAngle),
+      hsl(0 100% 55%),hsl(30 100% 55%),hsl(60 100% 55%),hsl(90 100% 55%),
+      hsl(120 100% 55%),hsl(150 100% 55%),hsl(180 100% 55%),hsl(210 100% 55%),
+      hsl(240 100% 55%),hsl(270 100% 55%),hsl(300 100% 55%),hsl(330 100% 55%),
+      hsl(360 100% 55%));
     -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     -webkit-mask-composite:xor;
     mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
     mask-composite:exclude;
-    animation:rainbowFlow 3s linear infinite;
+    animation:rbSpin 4s linear infinite;
   }
-  @keyframes rainbowFlow{to{background-position:300% 300%}}
+  @keyframes rbSpin{to{--rbAngle:360deg}}
   .tile .life{
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
