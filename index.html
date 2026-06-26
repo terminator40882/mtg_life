@@ -45,10 +45,23 @@
     transition:filter .18s ease, box-shadow .2s ease;
   }
   .tile.rot{transform:rotate(180deg)}
+  /* active player's box while their clock runs: flowing rainbow-wave border */
+  .tile.turn::after{
+    content:"";position:absolute;inset:0;z-index:2;pointer-events:none;
+    padding:8px;
+    background:linear-gradient(120deg,#ff004c,#ff8a00,#ffe600,#27ff61,#00e6ff,#3b6bff,#c14bff,#ff004c);
+    background-size:300% 300%;
+    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    -webkit-mask-composite:xor;
+    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
+    mask-composite:exclude;
+    animation:rainbowFlow 3s linear infinite;
+  }
+  @keyframes rainbowFlow{to{background-position:300% 300%}}
   .tile .life{
     font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
     font-variant-numeric:tabular-nums;letter-spacing:-0.03em;
-    pointer-events:none;opacity:.97;
+    pointer-events:none;opacity:.97;position:relative;z-index:3;
     transition:transform .2s ease;
   }
   /* tall tiles: the number is rotated a quarter turn so it runs along the
@@ -563,6 +576,8 @@
       var d = deltaSum[i] || 0;
       t.tile.setAttribute("data-delta", String(d));
       t.tile.setAttribute("data-active", S.active===i ? "true" : "false");
+      // rainbow border only on the active player while their clock is running
+      t.tile.classList.toggle("turn", S.active===i && S.phase==="playing" && !S.paused);
     }
   }
 
@@ -722,7 +737,7 @@
       S.paused = false;
       S.segStart = Date.now();
     }
-    updateCoin(); save();
+    updateTiles(); updateCoin(); save();
   }
 
   // coin gestures: tap = pass turn, double tap = pause, hold 1s = open settings
