@@ -842,14 +842,18 @@
   });
 
   // ---- reset -----------------------------------------------------------
-  function resetGame(withRoll){
+  // reset life/timer to a fresh, idle board (no active player, no roll yet)
+  function resetIdle(){
     endAllPress();
     clearRollTimers();
     S.life = []; S.totals = []; deltaSum = [];
     for(var i=0;i<S.count;i++){ S.life[i]=S.startingLife; S.totals[i]=0; deltaSum[i]=0; if(fadeTimer[i]) clearTimeout(fadeTimer[i]); }
     S.active=null; S.paused=false; S.turnAccum=0; S.segStart=null; S.phase="idle";
     for(var j=0;j<S.count;j++){ if(tileEls[j]){ tileEls[j].delta.classList.remove("show"); } }
-    updateTiles();
+    updateTiles(); updateCoin();
+  }
+  function resetGame(withRoll){
+    resetIdle();
     if(withRoll && !CFG.nosplash){
       startRoll();
     } else {
@@ -865,7 +869,12 @@
 
   // ---- settings sheet --------------------------------------------------
   function openSheet(){ el.overlay.classList.add("show"); el.sheet.classList.add("show"); }
-  function closeSheet(){ el.overlay.classList.remove("show"); el.sheet.classList.remove("show"); armResetBtn(false); }
+  function closeSheet(){
+    el.overlay.classList.remove("show"); el.sheet.classList.remove("show"); armResetBtn(false);
+    // a player-count change leaves the board idle (setCount); start the
+    // who-goes-first roll only now, when the menu is closed.
+    if(S.phase==="idle"){ resetGame(true); }
+  }
 
   el.overlay.addEventListener("click", closeSheet);
   el.done.addEventListener("click", closeSheet);
@@ -889,7 +898,8 @@
     syncSettingsUI();
     buildBoard();
     buildPlayerRows();
-    resetGame(true);
+    resetIdle();   // show the new board; the re-roll happens when the menu closes
+    save();
   }
 
   // direction segmented
