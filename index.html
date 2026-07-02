@@ -370,6 +370,8 @@
     repMin:   qNum("repMin", 55),      // fastest repeat interval
     repMax:   qNum("repMax", 180),     // starting repeat interval
     dblMs:    qNum("dblMs", 250),      // single vs double tap window on coin
+    edgeGuardPx:      qNum("edgeGuardPx", 24),      // screen-edge strip where Android's back/home swipe gesture can originate
+    edgeGuardMoveTol: qNum("edgeGuardMoveTol", 14), // px of movement allowed before an edge-originating touch is treated as a swipe, not a tap
     tickMs:   200,
     nosplash: Q.has("nosplash"),
     fresh:    Q.has("fresh"),
@@ -745,31 +747,89 @@
       tileEls[i].tile.setAttribute("data-delta","0");
     }, S.deltaFadeMs);
   }
-  function startPress(e, i, dir){
-    if(S.phase==="rolling") return;
-    e.preventDefault();
-    try{ if(e.pointerId!=null) e.target.setPointerCapture(e.pointerId); }catch(_){}
-    var z = tileEls[i][dir<0?"dec":"inc"]; z.classList.add("pressing");
+  // Android's edge-swipe gestures (back from the left/right edge, home from the
+  // bottom edge) can bleed a pointerdown (and a little movement) through to the
+  // page before the OS takes over the gesture. Since this board's tap zones sit
+  // flush against the physical screen edges, a swipe-to-go-back could otherwise
+  // be misread as a life-change tap. Touches that START within the edge strip
+  // are held "pending" instead of applied immediately: a genuine tap still
+  // resolves the instant the finger lifts (no added delay for a normal tap), but
+  // a swipe (movement past the tolerance, or the OS cancelling the touch) is
+  // dropped with no life change. A finger held past the normal hold-to-repeat
+  // threshold is trusted as a deliberate press even if it started on the edge.
+  function isEdgeStart(x, y){
+    var g = CFG.edgeGuardPx;
+    return x <= g || x >= window.innerWidth - g || y >= window.innerHeight - g;
+  }
+
+  function commitPress(i, dir, z){
     applyChange(i, dir);
-    var st = press[i] = { dir:dir, interval:CFG.repMax, zone:z };
+    var st = press[i] = { dir:dir, zone:z, interval:CFG.repMax };
     st.holdTimer = setTimeout(function repeat(){
       applyChange(i, dir);
       st.interval = Math.max(CFG.repMin, Math.round(st.interval*0.84));
       st.repTimer = setTimeout(repeat, st.interval);
     }, CFG.holdMs);
   }
+
+  function startPress(e, i, dir){
+    if(S.phase==="rolling") return;
+    e.preventDefault();
+    try{ if(e.pointerId!=null) e.target.setPointerCapture(e.pointerId); }catch(_){}
+    var z = tileEls[i][dir<0?"dec":"inc"]; z.classList.add("pressing");
+
+    if(isEdgeStart(e.clientX, e.clientY)){
+      var ox = e.clientX, oy = e.clientY;
+      var guard = {};
+      guard.moveHandler = function(ev){
+        if(Math.hypot(ev.clientX-ox, ev.clientY-oy) > CFG.edgeGuardMoveTol){
+          endPress(i);   // moved like a swipe: abort, no life change
+        }
+      };
+      z.addEventListener("pointermove", guard.moveHandler);
+      guard.timer = setTimeout(function(){
+        z.removeEventListener("pointermove", guard.moveHandler);
+        commitPress(i, dir, z);   // still down past the hold threshold: a deliberate press
+      }, CFG.holdMs);
+      press[i] = { dir:dir, zone:z, guard:guard };
+      return;
+    }
+
+    commitPress(i, dir, z);
+  }
   function endPress(i){
     var st = press[i]; if(!st) return;
+    if(st.guard){
+      if(st.guard.timer) clearTimeout(st.guard.timer);
+      if(st.guard.moveHandler) st.zone.removeEventListener("pointermove", st.guard.moveHandler);
+      st.zone.classList.remove("pressing");
+      delete press[i];
+      return;
+    }
     if(st.holdTimer) clearTimeout(st.holdTimer);
     if(st.repTimer) clearTimeout(st.repTimer);
     if(st.zone) st.zone.classList.remove("pressing");
     delete press[i];
   }
+  function endTap(i){
+    // a clean pointerup while still pending (edge-guarded) confirms a real,
+    // quick tap: commit exactly one change instead of discarding it
+    var st = press[i];
+    if(st && st.guard){
+      if(st.guard.timer) clearTimeout(st.guard.timer);
+      if(st.guard.moveHandler) st.zone.removeEventListener("pointermove", st.guard.moveHandler);
+      var z = st.zone; z.classList.remove("pressing");
+      delete press[i];
+      applyChange(i, st.dir);
+      return;
+    }
+    endPress(i);
+  }
   function endAllPress(){ Object.keys(press).forEach(function(k){ endPress(+k); }); }
 
   function wireZone(zone, i, dir){
     zone.addEventListener("pointerdown", function(e){ startPress(e,i,dir); });
-    zone.addEventListener("pointerup", function(){ endPress(i); });
+    zone.addEventListener("pointerup", function(){ endTap(i); });
     zone.addEventListener("pointercancel", function(){ endPress(i); });
     zone.addEventListener("keydown", function(e){
       if(e.key===" "||e.key==="Enter"){ e.preventDefault(); if(S.phase!=="rolling") applyChange(i,dir); }
@@ -897,11 +957,20 @@
     updateTiles(); updateCoin(); save();
   }
 
-  // coin gestures: tap = pass turn, double tap = pause, hold 1s = open settings
+  // coin gestures: tap = pass turn, double tap = pause, hold 1s = open settings.
+  // Guard against Android's edge-swipe (back/home) bleeding a touch through: if
+  // the finger moves like a swipe before release, the tap/hold is ignored so the
+  // active player can't be changed by a navigation gesture passing over the bar.
   var pendingPass = null;
-  var coinHoldTimer = null, coinHeld = false;
+  var coinHoldTimer = null, coinHeld = false, coinSwiped = false, coinOX = 0, coinOY = 0;
+  function coinMoveCheck(e){
+    if(Math.hypot(e.clientX-coinOX, e.clientY-coinOY) > CFG.edgeGuardMoveTol){
+      coinSwiped = true;
+      coinHoldCancel();
+    }
+  }
   el.coin.addEventListener("pointerdown", function(e){
-    coinHeld = false;
+    coinHeld = false; coinSwiped = false; coinOX = e.clientX; coinOY = e.clientY;
     coinHoldTimer = setTimeout(function(){
       coinHeld = true;
       if(pendingPass){ clearTimeout(pendingPass); pendingPass = null; }
@@ -909,10 +978,12 @@
       openSheet();
     }, 1000);
   });
+  el.coin.addEventListener("pointermove", coinMoveCheck);
   function coinHoldCancel(){ if(coinHoldTimer){ clearTimeout(coinHoldTimer); coinHoldTimer = null; } }
   el.coin.addEventListener("pointerup", function(e){
     coinHoldCancel();
     if(coinHeld){ coinHeld = false; return; }   // the hold already opened settings
+    if(coinSwiped){ coinSwiped = false; return; }   // looked like a swipe: ignore, no pass/pause
     if(S.phase!=="playing") return;
     if(pendingPass){ clearTimeout(pendingPass); pendingPass=null; togglePause(); }
     else { pendingPass = setTimeout(function(){ pendingPass=null; passTurn(); }, CFG.dblMs); }
