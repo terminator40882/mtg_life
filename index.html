@@ -129,6 +129,33 @@
   .badge.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
   .badge.second{font-size:clamp(14px,4vw,20px);background:rgba(255,255,255,.92)}
 
+  /* commander-damage strip: small chips on the timer-facing edge (position/rotation
+     set per tile in JS). Kept compact so the life number stays dominant. */
+  .cdstrip{
+    position:absolute;display:none;align-items:center;gap:5px;z-index:4;
+    padding:3px;border-radius:999px;background:rgba(0,0,0,.28);
+    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+    cursor:pointer;touch-action:none;
+  }
+  .cdstrip.show{display:flex}
+  .cdstrip .cd-enter{
+    font-size:15px;line-height:1;opacity:.9;padding:0 3px;color:var(--fg,#fff);
+    filter:drop-shadow(0 1px 1px rgba(0,0,0,.5));
+  }
+  .cdstrip .cdbox{
+    min-width:20px;height:20px;padding:0 5px;border-radius:999px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;
+    border:1px solid rgba(255,255,255,.28);
+  }
+  .cdstrip .cdbox.lethal{background:var(--danger)!important;color:#fff!important;border-color:#fff;animation:cdPulse 1s ease-in-out infinite}
+  @keyframes cdPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,91,91,.6)}50%{box-shadow:0 0 0 5px rgba(255,91,91,0)}}
+  /* dealing mode: the dealer's own tile goes black (tap it to return) */
+  .tile.cd-dealer{--tile:#0a0a0a}
+  .tile.cd-dealer .cdstrip{background:rgba(255,255,255,.14)}
+  .tile.cd-dealer .cd-enter::after{content:" \2715";font-size:12px;opacity:.8}
+  .board.cd-active .tile:not(.cd-dealer) .cdstrip{display:none}
+
   .board.rolling .tile{filter:brightness(.34) saturate(.85)}
   .board.rolling .tile.spot{filter:none;box-shadow:inset 0 0 0 4px rgba(255,255,255,.85)}
   .board.rolling .tile.first{filter:none;box-shadow:inset 0 0 0 5px #fff}
@@ -249,6 +276,13 @@
     color:var(--text);font:inherit;font-size:15px;padding:5px 2px;border-radius:0
   }
   .prow input.name:focus{outline:none;border-bottom-color:rgba(255,255,255,.45)}
+  /* per-player commander-damage toggle (⚔) */
+  .cdtoggle{
+    flex:0 0 auto;width:34px;height:30px;border-radius:9px;cursor:pointer;
+    border:1px solid var(--line);background:var(--sheet-row);color:var(--muted);
+    font-size:16px;line-height:1;
+  }
+  .cdtoggle.on{background:#3a3f49;color:#fff;border-color:rgba(255,255,255,.35)}
   .picker{display:none;flex-wrap:wrap;gap:9px;padding:12px 2px 4px}
   .picker.open{display:flex}
   .picker .opt{width:30px;height:30px;border-radius:8px;border:2px solid transparent;cursor:pointer}
@@ -423,9 +457,10 @@
     lifeScale: 1,             // multiplier for the life-number font size
     timerScale: 1,            // multiplier for the timer font size
     timerEnabled: true,       // if false: no turn timer / active-player tracking; the bar becomes a small inert circle
-    players: [],            // {name, color}
+    players: [],            // {name, color, cd?}
     life: [],               // per player
     totals: [],             // banked ms per player
+    cmdDmg: [],             // count x count matrix: cmdDmg[dealer][receiver] = commander damage dealt
     active: null,           // index or null
     paused: false,
     phase: "idle",          // idle | rolling | playing
@@ -443,6 +478,22 @@
     return arr;
   }
 
+  // (Re)size the commander-damage matrix to the current player count, keeping any
+  // existing values. cmdDmg[dealer][receiver] = commander damage dealt so far.
+  function ensureCmdMatrix(){
+    var n = S.count, src = Array.isArray(S.cmdDmg) ? S.cmdDmg : [];
+    var m = [];
+    for(var d=0; d<n; d++){
+      m[d] = [];
+      for(var r=0; r<n; r++){
+        var v = (src[d] && typeof src[d][r]==="number") ? src[d][r] : 0;
+        m[d][r] = (d===r) ? 0 : Math.max(0, v);
+      }
+    }
+    S.cmdDmg = m;
+  }
+  function clearCmdMatrix(){ S.cmdDmg = []; ensureCmdMatrix(); }
+
   // ---- persistence (guarded; degrades to in-memory) --------------------
   function save(){
     try{
@@ -450,7 +501,7 @@
         count:S.count, startingLife:S.startingLife, direction:S.direction,
         deltaFadeMs:S.deltaFadeMs, ptrCycleSec:S.ptrCycleSec,
         panel5Share:S.panel5Share, lifeScale:S.lifeScale, timerScale:S.timerScale, timerEnabled:S.timerEnabled,
-        players:S.players, life:S.life, totals:S.totals, active:S.active,
+        players:S.players, life:S.life, totals:S.totals, cmdDmg:S.cmdDmg, active:S.active,
         paused:S.paused, turnAccum:currentTurn()
       };
       localStorage.setItem(STORE_KEY, JSON.stringify(data));
@@ -615,16 +666,24 @@
       var rb = document.createElement("div");   // rainbow ring for the active player
       rb.className = "rb";
 
+      // commander-damage strip (only shown for players with CD tracking enabled):
+      // a ⚔ entry chip plus one chip per opponent showing damage dealt to them
+      var cdstrip = document.createElement("div");
+      cdstrip.className = "cdstrip";
+      cdstrip.setAttribute("data-testid","cdstrip-"+i);
+
       tile.appendChild(dec);
       tile.appendChild(inc);
       tile.appendChild(delta);
       tile.appendChild(life);
       tile.appendChild(badge);
       tile.appendChild(rb);
+      tile.appendChild(cdstrip);
 
-      tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc };
+      tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc, cdstrip:cdstrip };
       wireZone(dec, i, -1);
       wireZone(inc, i, +1);
+      wireCdStrip(cdstrip, i);
       applyTileColor(i);
       return tile;
     }
@@ -716,6 +775,16 @@
         ds.left = "calc(100% - " + inset + "px)";
       }
       ds.transform = "translate(-50%,-50%) rotate(" + theta + "deg)";
+
+      // commander-damage strip: centred on the timer-facing (local top) edge and
+      // rotated to the same orientation as the number so it reads upright for the
+      // seat; sits clear of the corner delta.
+      if(t.cdstrip){
+        var cs = t.cdstrip.style;
+        cs.top = "20px"; cs.left = "50%"; cs.bottom = "auto"; cs.right = "auto";
+        cs.transformOrigin = "center center";
+        cs.transform = "translate(-50%,-50%) rotate(" + theta + "deg)";
+      }
     }
   }
 
@@ -737,12 +806,45 @@
       // rainbow border only on the active player while their clock is running
       t.tile.classList.toggle("turn", S.active===i && S.phase==="playing" && !S.paused);
     }
+    renderCmdBoxes();
+  }
+
+  // Build/refresh each tile's commander-damage strip. A CD-enabled player's tile
+  // shows a ⚔ entry chip plus, per opponent, the damage that player has dealt to
+  // them (chip in the opponent's colour; red once it reaches the lethal 21). The
+  // strip is hidden for players without CD tracking.
+  var CMD_LETHAL = 21;
+  function renderCmdBoxes(){
+    for(var i=0;i<S.count;i++){
+      var t = tileEls[i]; if(!t || !t.cdstrip) continue;
+      var on = !!(S.players[i] && S.players[i].cd);
+      t.cdstrip.classList.toggle("show", on);
+      t.tile.classList.toggle("has-cd", on);
+      if(!on){ t.cdstrip.innerHTML = ""; continue; }
+      var html = '<span class="cd-enter" aria-hidden="true">⚔</span>';
+      for(var j=0;j<S.count;j++){
+        if(j===i) continue;
+        var v = (S.cmdDmg[i] && S.cmdDmg[i][j]) || 0;
+        if(v<=0) continue;
+        var hex = colorHex(S.players[j].color);
+        html += '<span class="cdbox'+(v>=CMD_LETHAL?" lethal":"")+'" data-testid="cd-'+i+'-'+j+'"'
+              + ' style="background:'+hex+';color:'+fgFor(hex)+'">'+v+'</span>';
+      }
+      t.cdstrip.innerHTML = html;
+    }
   }
 
   // ---- life changes ----------------------------------------------------
   var press = {}; // index -> {holdTimer, repTimer, interval, dir}
+  var cdMode = null; // index of the player currently dealing commander damage, or null
 
   function applyChange(i, dir){
+    // in a dealer's mode, life lost by an opponent is recorded as that dealer's
+    // commander damage (and undo/increase reduces it), clamped at 0
+    if(cdMode!=null && i!==cdMode){
+      S.cmdDmg[cdMode][i] = Math.max(0, (S.cmdDmg[cdMode][i]||0) - dir);
+      renderCmdBoxes();
+    }
     S.life[i] += dir;
     deltaSum[i] = (deltaSum[i]||0) + dir;
     var t = tileEls[i];
@@ -790,6 +892,9 @@
 
   function startPress(e, i, dir){
     if(S.phase==="rolling") return;
+    // in dealing mode, tapping the dealer's own (black) tile exits the mode; the
+    // dealer can't edit their own life while dealing
+    if(cdMode!=null && i===cdMode){ e.preventDefault(); exitCdMode(); return; }
     e.preventDefault();
     try{ if(e.pointerId!=null) e.target.setPointerCapture(e.pointerId); }catch(_){}
     var z = tileEls[i][dir<0?"dec":"inc"]; z.classList.add("pressing");
@@ -854,6 +959,53 @@
   window.addEventListener("pointerup", endAllPress);
   window.addEventListener("pointercancel", endAllPress);
   window.addEventListener("blur", endAllPress);
+
+  // ---- commander-damage dealing mode -----------------------------------
+  // Tapping a CD-enabled player's strip enters that player's dealing mode: every
+  // OTHER tile recolours to the dealer's fill + text colour (so life edited there
+  // is recorded as that dealer's commander damage) and the dealer's own tile goes
+  // black. Tapping the dealer tile exits.
+  function enterCdMode(a){
+    if(cdMode!=null) exitCdMode();
+    cdMode = a;
+    endAllPress();
+    el.board.classList.add("cd-active");
+    var hex = colorHex(S.players[a].color), fg = fgFor(hex);
+    for(var i=0;i<S.count;i++){
+      var t = tileEls[i]; if(!t) continue;
+      if(i===a){
+        // dealer's own tile goes black, their number shown in their own colour
+        t.tile.classList.add("cd-dealer");
+        t.tile.style.setProperty("--tile", "#0a0a0a");
+        t.tile.style.setProperty("--fg", hex);
+      } else {
+        t.tile.style.setProperty("--tile", hex);
+        t.tile.style.setProperty("--fg", fg);
+      }
+    }
+    renderCmdBoxes();
+  }
+  function exitCdMode(){
+    if(cdMode==null) return;
+    cdMode = null;
+    el.board.classList.remove("cd-active");
+    for(var i=0;i<S.count;i++){
+      if(tileEls[i]) tileEls[i].tile.classList.remove("cd-dealer");
+      applyTileColor(i);   // restore each tile's own colour
+    }
+    updateCoin();
+    renderCmdBoxes();
+    save();
+  }
+  function wireCdStrip(strip, i){
+    strip.addEventListener("pointerdown", function(e){
+      if(S.phase==="rolling") return;
+      if(!(S.players[i] && S.players[i].cd)) return;
+      e.preventDefault(); e.stopPropagation();
+      if(cdMode===i) exitCdMode();
+      else if(cdMode==null) enterCdMode(i);
+    });
+  }
 
   // ---- timer -----------------------------------------------------------
   function currentTurn(){
@@ -1095,9 +1247,11 @@
   // reset life/timer to a fresh, idle board (no active player, no roll yet)
   function resetIdle(){
     endAllPress();
+    if(cdMode!=null) exitCdMode();
     clearRollTimers();
     S.life = []; S.totals = []; deltaSum = [];
     for(var i=0;i<S.count;i++){ S.life[i]=S.startingLife; S.totals[i]=0; deltaSum[i]=0; if(fadeTimer[i]) clearTimeout(fadeTimer[i]); }
+    clearCmdMatrix();   // a fresh game clears accumulated commander damage
     S.active=null; S.paused=false; S.turnAccum=0; S.segStart=null; S.phase="idle";
     for(var j=0;j<S.count;j++){ if(tileEls[j]){ tileEls[j].delta.classList.remove("show"); } }
     updateTiles(); updateCoin();
@@ -1151,6 +1305,7 @@
     var p = S.players.slice(0,n);
     for(var i=p.length;i<n;i++){ p.push({ name:"Player "+(i+1), color: COLOR_ORDER[i % COLOR_ORDER.length] }); }
     S.players = p;
+    ensureCmdMatrix();
     syncSettingsUI();
     buildBoard();
     buildPlayerRows();
@@ -1282,6 +1437,7 @@
             sw.style.background = PALETTE[cn];
             applyTileColor(i);
             if(S.active===i) updateCoin();
+            renderCmdBoxes();
             picker.querySelectorAll(".opt").forEach(function(o){ o.classList.remove("sel"); });
             opt.classList.add("sel");
             save();
@@ -1302,6 +1458,7 @@
           sw.style.background = custom.value;
           applyTileColor(i);
           if(S.active===i) updateCoin();
+          renderCmdBoxes();
           picker.querySelectorAll(".opt").forEach(function(o){ o.classList.remove("sel"); });
           save();
         });
@@ -1315,7 +1472,24 @@
           if(willOpen) picker.classList.add("open");
         });
 
-        head.appendChild(sw); head.appendChild(name);
+        // commander-damage tracking toggle for this player
+        var cdBtn = document.createElement("button");
+        cdBtn.className = "cdtoggle" + (S.players[i].cd ? " on" : "");
+        cdBtn.type = "button";
+        cdBtn.textContent = "⚔";
+        cdBtn.title = "Track commander damage";
+        cdBtn.setAttribute("aria-label","Toggle commander-damage tracking for "+S.players[i].name);
+        cdBtn.setAttribute("aria-pressed", S.players[i].cd ? "true" : "false");
+        cdBtn.setAttribute("data-testid","player-"+i+"-cd");
+        cdBtn.addEventListener("click", function(){
+          S.players[i].cd = !S.players[i].cd;
+          cdBtn.classList.toggle("on", S.players[i].cd);
+          cdBtn.setAttribute("aria-pressed", S.players[i].cd ? "true" : "false");
+          if(!S.players[i].cd && cdMode===i) exitCdMode();
+          renderCmdBoxes(); applyTileOrientation(); save();
+        });
+
+        head.appendChild(sw); head.appendChild(name); head.appendChild(cdBtn);
         row.appendChild(head); row.appendChild(picker);
         el.playerList.appendChild(row);
       })(i);
@@ -1374,6 +1548,9 @@
       while(S.players.length < S.count) S.players.push({name:"Player "+(S.players.length+1), color:COLOR_ORDER[S.players.length%COLOR_ORDER.length]});
       S.life = (saved.life && saved.life.length===S.count)? saved.life.slice() : S.players.map(function(){return S.startingLife;});
       S.totals = (saved.totals && saved.totals.length===S.count)? saved.totals.slice() : S.players.map(function(){return 0;});
+      S.players.forEach(function(p){ p.cd = !!p.cd; });
+      S.cmdDmg = Array.isArray(saved.cmdDmg) ? saved.cmdDmg : [];
+      ensureCmdMatrix();
       deltaSum = S.players.map(function(){return 0;});
       if(S.timerEnabled){
         S.active = (typeof saved.active==="number") ? saved.active : 0;
@@ -1387,6 +1564,7 @@
       syncSettingsUI(); buildBoard(); buildPlayerRows(); updateCoin();
     } else {
       S.players = defaultPlayers(S.count);
+      clearCmdMatrix();
       deltaSum = S.players.map(function(){return 0;});
       syncSettingsUI(); buildBoard(); buildPlayerRows();
       resetGame(true);
