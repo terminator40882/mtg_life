@@ -153,6 +153,13 @@
     transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
   }
   .coin.hidden{opacity:0;pointer-events:none}
+  /* timer disabled: the bar shrinks to a small inert circle (still tappable to
+     hold-open Settings) and no time/active-player content is shown in it */
+  .coin.mini{
+    width:clamp(40px,10vw,54px);height:clamp(40px,10vw,54px);
+    border-radius:50%;align-self:center;
+  }
+  .coin.mini .timegroup{display:none}
   /* arrow on the ring that rotates to point at the active player's tile,
      so the active player is identified by position even if colours collide */
   /* directional arrow is not used in the bar layout (active player is shown by
@@ -303,6 +310,13 @@
     <div class="seg" id="countSeg"></div>
   </div>
   <div class="srow">
+    <span class="lab">Turn timer</span>
+    <div class="seg" id="timerSeg">
+      <button data-testid="timer-on" data-timer="on">On</button>
+      <button data-testid="timer-off" data-timer="off">Off</button>
+    </div>
+  </div>
+  <div class="srow">
     <span class="lab">Starting life</span>
     <div class="stepper">
       <button data-testid="life-dec" aria-label="Decrease starting life">–</button>
@@ -408,6 +422,7 @@
     panel5Share: 0.2,         // 5-player: fraction of non-timer height for the 5th (full-width) panel; top+middle rows split the rest equally
     lifeScale: 1,             // multiplier for the life-number font size
     timerScale: 1,            // multiplier for the timer font size
+    timerEnabled: true,       // if false: no turn timer / active-player tracking; the bar becomes a small inert circle
     players: [],            // {name, color}
     life: [],               // per player
     totals: [],             // banked ms per player
@@ -434,7 +449,7 @@
       var data = {
         count:S.count, startingLife:S.startingLife, direction:S.direction,
         deltaFadeMs:S.deltaFadeMs, ptrCycleSec:S.ptrCycleSec,
-        panel5Share:S.panel5Share, lifeScale:S.lifeScale, timerScale:S.timerScale,
+        panel5Share:S.panel5Share, lifeScale:S.lifeScale, timerScale:S.timerScale, timerEnabled:S.timerEnabled,
         players:S.players, life:S.life, totals:S.totals, active:S.active,
         paused:S.paused, turnAccum:currentTurn()
       };
@@ -513,6 +528,7 @@
     sheet: document.querySelector('[data-testid="settings"]'),
     countSeg: document.getElementById("countSeg"),
     dirSeg: document.getElementById("dirSeg"),
+    timerSeg: document.getElementById("timerSeg"),
     lifeVal: document.querySelector('[data-testid="life-val"]'),
     lifeDec: document.querySelector('[data-testid="life-dec"]'),
     lifeInc: document.querySelector('[data-testid="life-inc"]'),
@@ -898,6 +914,7 @@
   }
 
   function updateCoin(){
+    el.coin.classList.toggle("mini", !S.timerEnabled);
     var rolling = S.phase==="rolling";
     el.coin.classList.toggle("hidden", rolling);
     el.coin.classList.toggle("paused", S.paused);
@@ -984,6 +1001,7 @@
     coinHoldCancel();
     if(coinHeld){ coinHeld = false; return; }   // the hold already opened settings
     if(coinSwiped){ coinSwiped = false; return; }   // looked like a swipe: ignore, no pass/pause
+    if(!S.timerEnabled) return;   // mini circle: no pass/pause, only the long-press opens settings
     if(S.phase!=="playing") return;
     if(pendingPass){ clearTimeout(pendingPass); pendingPass=null; togglePause(); }
     else { pendingPass = setTimeout(function(){ pendingPass=null; passTurn(); }, CFG.dblMs); }
@@ -1086,7 +1104,13 @@
   }
   function resetGame(withRoll){
     resetIdle();
-    if(withRoll && !CFG.nosplash){
+    if(!S.timerEnabled){
+      // timer disabled: no active player / roll ceremony, just start playing
+      S.active = null; S.phase = "playing"; S.segStart = null;
+      el.board.removeAttribute("data-first-player");
+      el.board.removeAttribute("data-second-player");
+      updateTiles(); updateCoin();
+    } else if(withRoll && !CFG.nosplash){
       startRoll();
     } else {
       S.active = pickFirst();
@@ -1143,6 +1167,36 @@
       save();
     });
   });
+
+  // turn timer on/off: disabling turns the bar into a small inert circle with
+  // no time display and no active-player tracking; life editing is unaffected.
+  el.timerSeg.querySelectorAll("button").forEach(function(b){
+    b.addEventListener("click", function(){
+      setTimerEnabled(b.getAttribute("data-timer")==="on");
+    });
+  });
+  function setTimerEnabled(enabled){
+    if(enabled === S.timerEnabled) return;
+    S.timerEnabled = enabled;
+    if(!enabled){
+      clearRollTimers();
+      el.board.classList.remove("rolling");
+      el.hint.classList.remove("show");
+      el.skip.classList.remove("show");
+      S.active = null; S.paused = false; S.turnAccum = 0; S.segStart = null;
+      S.phase = "playing";
+    } else {
+      // re-enabling mid-game: establish an active player without resetting
+      // life totals or running the roll-for-first ceremony
+      S.active = pickFirst();
+      S.paused = false;
+      S.turnAccum = 0;
+      S.segStart = Date.now();
+      S.phase = "playing";
+    }
+    syncSettingsUI();
+    updateTiles(); updateCoin(); save();
+  }
 
   // starting life
   el.lifeDec.addEventListener("click", function(){ S.startingLife = Math.max(1, S.startingLife-1); syncSettingsUI(); save(); });
@@ -1292,6 +1346,9 @@
     el.dirSeg.querySelectorAll("button").forEach(function(b){
       b.classList.toggle("on", b.getAttribute("data-dir")===S.direction);
     });
+    el.timerSeg.querySelectorAll("button").forEach(function(b){
+      b.classList.toggle("on", (b.getAttribute("data-timer")==="on")===S.timerEnabled);
+    });
     el.lifeVal.textContent = String(S.startingLife);
     el.deltaVal.textContent = Math.round(S.deltaFadeMs/1000) + "s";
     el.panel5Val.textContent = Math.round(S.panel5Share*100) + "%";
@@ -1311,16 +1368,21 @@
       S.panel5Share = (typeof saved.panel5Share==="number" && saved.panel5Share>=0.1 && saved.panel5Share<=0.5) ? saved.panel5Share : 0.2;
       S.lifeScale = (typeof saved.lifeScale==="number" && saved.lifeScale>=0.5 && saved.lifeScale<=2) ? saved.lifeScale : 1;
       S.timerScale = (typeof saved.timerScale==="number" && saved.timerScale>=0.5 && saved.timerScale<=2) ? saved.timerScale : 1;
+      S.timerEnabled = (typeof saved.timerEnabled==="boolean") ? saved.timerEnabled : true;
       S.direction = saved.direction==="ccw" ? "ccw" : "cw";
       S.players = (saved.players && saved.players.length)? saved.players : defaultPlayers(S.count);
       while(S.players.length < S.count) S.players.push({name:"Player "+(S.players.length+1), color:COLOR_ORDER[S.players.length%COLOR_ORDER.length]});
       S.life = (saved.life && saved.life.length===S.count)? saved.life.slice() : S.players.map(function(){return S.startingLife;});
       S.totals = (saved.totals && saved.totals.length===S.count)? saved.totals.slice() : S.players.map(function(){return 0;});
       deltaSum = S.players.map(function(){return 0;});
-      S.active = (typeof saved.active==="number") ? saved.active : 0;
-      S.paused = !!saved.paused;
-      S.turnAccum = saved.turnAccum || 0;
-      S.segStart = S.paused ? null : Date.now();
+      if(S.timerEnabled){
+        S.active = (typeof saved.active==="number") ? saved.active : 0;
+        S.paused = !!saved.paused;
+        S.turnAccum = saved.turnAccum || 0;
+        S.segStart = S.paused ? null : Date.now();
+      } else {
+        S.active = null; S.paused = false; S.turnAccum = 0; S.segStart = null;
+      }
       S.phase = "playing";
       syncSettingsUI(); buildBoard(); buildPlayerRows(); updateCoin();
     } else {
