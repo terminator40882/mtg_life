@@ -7,1615 +7,850 @@
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 <meta name="apple-mobile-web-app-title" content="Cmdr Life" />
-<meta name="theme-color" content="#0a0c0f" />
+<meta name="theme-color" content="#060709" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="icon-192.png" />
 <link rel="icon" type="image/png" href="icon-192.png" />
-<title>Commander life</title>
+<title>Commander Life</title>
 <style>
-  :root{
-    --bg:#08090c;
-    --gutter:#000;
-    --coin-bg:rgba(16,18,22,0.62);
-    --chip-bg:rgba(10,11,14,0.55);
-    --sheet:#15181d;
-    --sheet-row:#1d2128;
-    --line:rgba(255,255,255,0.10);
-    --text:#f2f4f7;
-    --muted:rgba(255,255,255,0.62);
-    --danger:#ff5b5b;
-    --active:#555;
-    --gap:5px;
-    --coin: clamp(118px, 28vw, 158px);
-    --coin-border: 8px;
+  html,body{margin:0;height:100%;background:#060709;overflow:hidden}
+  body{
+    -webkit-user-select:none;user-select:none;touch-action:manipulation;
+    overscroll-behavior:none;-webkit-tap-highlight-color:transparent;
+    font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
+    font-variant-numeric:tabular-nums;color:#fff;
   }
   *{box-sizing:border-box}
-  html,body{height:100%}
-  body{
-    margin:0;background:var(--bg);color:var(--text);
-    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,system-ui,sans-serif;
-    overflow:hidden;-webkit-user-select:none;user-select:none;
-    -webkit-tap-highlight-color:transparent;
-    overscroll-behavior:none;touch-action:none;
-  }
-  /* size to the *visible* viewport (excludes the browser bar) so the coin is
-     centred in what the player actually sees; --app-h is refined in JS */
-  #app{position:fixed;left:0;top:0;width:100%;height:100dvh;height:var(--app-h,100dvh)}
-  .board{position:absolute;inset:0;background:var(--gutter)}
-  #rows{position:absolute;inset:0;display:flex;flex-direction:column;gap:var(--gap);background:var(--gutter)}
-  .row{flex:1;display:flex;gap:var(--gap);min-height:0}
-  .tile{
-    flex:1;position:relative;overflow:hidden;min-width:0;
-    background:var(--tile,#333);color:var(--fg,#fff);
-    display:grid;place-items:center;
-    transition:filter .18s ease, box-shadow .2s ease;
-  }
-  .tile.rot{transform:rotate(180deg)}
-  /* active player's box while their clock runs: a rainbow ring that spins
-     clockwise. The conic gradient sits on a child that is rotated with
-     transform (robust on mobile, no @property), and the parent masks it to a
-     thin ring. A standard vivid rainbow with matching red ends keeps it
-     seamless. */
-  .tile .rb{
-    position:absolute;inset:0;z-index:2;pointer-events:none;display:none;overflow:hidden;
-    padding:8px;
-    -webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-    -webkit-mask-composite:xor;
-    mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);
-    mask-composite:exclude;
-  }
-  .tile.turn .rb{display:block}
-  .tile .rb::before{
-    content:"";position:absolute;left:50%;top:50%;width:320%;aspect-ratio:1;
-    transform:translate(-50%,-50%) rotate(0turn);
-    background:conic-gradient(#ff3b3b,#ff9d00,#ffe000,#34e24a,#16dada,#2d7bff,#9b3dff,#ff3db0,#ff3b3b);
-    animation:rbSpin 4s linear infinite;
-  }
-  @keyframes rbSpin{to{transform:translate(-50%,-50%) rotate(1turn)}}
-  .tile .life{
-    font-size:clamp(54px, 19vw, 150px);font-weight:800;line-height:1;
-    font-variant-numeric:tabular-nums;letter-spacing:0;text-align:center;
-    pointer-events:none;opacity:.97;position:relative;z-index:3;
-    transform-origin:center center;
-    transition:transform .2s ease;
-  }
-  /* tall tiles: the number is rotated a quarter turn so it runs along the
-     longer side; the exact rotation (and font size) is set per tile in JS so
-     it reads upright for the player seated on that long edge (left/right) */
-  /* default (wide tiles): split along the vertical centre line, left −, right + */
-  .zone{position:absolute;top:0;bottom:0;width:50%;height:auto;touch-action:none;cursor:pointer;background:transparent;outline:none}
-  .zone.dec{left:0;right:auto}
-  .zone.inc{right:0;left:auto}
-  /* tall tiles: split along the horizontal centre line, top +, bottom − */
-  .tile.tall .zone{left:0;right:0;top:auto;bottom:auto;width:auto;height:50%}
-  .tile.tall .zone.inc{top:0}
-  .tile.tall .zone.dec{bottom:0}
-  .zone .sign{
-    position:absolute;top:50%;transform:translateY(-50%);
-    font-size:clamp(26px,7vw,48px);font-weight:700;color:var(--fg,#fff);
-    opacity:0;transition:opacity .12s ease;pointer-events:none;
-  }
-  .zone.dec .sign{left:11%}
-  .zone.inc .sign{right:11%}
-  .tile.tall .zone .sign{top:auto;bottom:auto;left:50%;right:auto;transform:translateX(-50%)}
-  .tile.tall .zone.inc .sign{top:8%}
-  .tile.tall .zone.dec .sign{bottom:8%}
-  /* per-seat flip so − is always on the player's left, + on their right:
-     swap which screen end each zone (and its sign) occupies */
-  .tile.tall.zflip .zone.inc{top:auto;bottom:0}
-  .tile.tall.zflip .zone.dec{bottom:auto;top:0}
-  .tile.tall.zflip .zone.inc .sign{top:auto;bottom:8%}
-  .tile.tall.zflip .zone.dec .sign{bottom:auto;top:8%}
-  .zone.pressing .sign{opacity:.32}
-  .zone:focus-visible{box-shadow:inset 0 0 0 3px rgba(255,255,255,.5)}
-  /* +/- change chip; position is set per tile in JS (inner corner, toward the
-     timer). Animate opacity only so it doesn't fight the inline positioning. */
-  .delta{
-    position:absolute;top:12px;left:12px;
-    background:var(--chip-bg);color:#fff;border:1px solid rgba(255,255,255,.16);
-    backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    padding:5px 13px;border-radius:999px;font-size:clamp(16px,4.6vw,23px);font-weight:700;
-    font-variant-numeric:tabular-nums;pointer-events:none;z-index:4;
-    opacity:0;transition:opacity .22s ease;
-  }
-  .delta.show{opacity:1}
-  .badge{
-    position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) scale(.6);
-    background:#fff;color:#111;border-radius:999px;padding:7px 16px;
-    font-weight:700;font-size:clamp(18px,5vw,26px);
-    opacity:0;transition:opacity .25s ease, transform .25s ease;
-    pointer-events:none;box-shadow:0 6px 24px rgba(0,0,0,.45);z-index:6;
-  }
-  .badge.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
-  .badge.second{font-size:clamp(14px,4vw,20px);background:rgba(255,255,255,.92)}
-
-  /* commander-damage strip: small chips on the timer-facing edge (position/rotation
-     set per tile in JS). Kept compact so the life number stays dominant. */
-  .cdstrip{
-    position:absolute;display:none;align-items:center;gap:5px;z-index:4;
-    padding:3px;border-radius:999px;background:rgba(0,0,0,.28);
-    -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
-    cursor:pointer;touch-action:none;
-  }
-  .cdstrip.show{display:flex}
-  .cdstrip .cd-enter{
-    font-size:15px;line-height:1;opacity:.9;padding:0 3px;color:var(--fg,#fff);
-    filter:drop-shadow(0 1px 1px rgba(0,0,0,.5));
-  }
-  .cdstrip .cdbox{
-    min-width:20px;height:20px;padding:0 5px;border-radius:999px;
-    display:inline-flex;align-items:center;justify-content:center;
-    font-size:13px;font-weight:800;font-variant-numeric:tabular-nums;
-    border:1px solid rgba(255,255,255,.28);
-  }
-  .cdstrip .cdbox.lethal{background:var(--danger)!important;color:#fff!important;border-color:#fff;animation:cdPulse 1s ease-in-out infinite}
-  @keyframes cdPulse{0%,100%{box-shadow:0 0 0 0 rgba(255,91,91,.6)}50%{box-shadow:0 0 0 5px rgba(255,91,91,0)}}
-  /* dealing mode: the dealer's own tile goes black (tap it to return) */
-  .tile.cd-dealer{--tile:#0a0a0a}
-  .tile.cd-dealer .cdstrip{background:rgba(255,255,255,.14)}
-  .tile.cd-dealer .cd-enter::after{content:" \2715";font-size:12px;opacity:.8}
-  .board.cd-active .tile:not(.cd-dealer) .cdstrip{display:none}
-
-  .board.rolling .tile{filter:brightness(.34) saturate(.85)}
-  .board.rolling .tile.spot{filter:none;box-shadow:inset 0 0 0 4px rgba(255,255,255,.85)}
-  .board.rolling .tile.first{filter:none;box-shadow:inset 0 0 0 5px #fff}
-  /* second player (3+ players): their darkened field briefly lights up */
-  .board.rolling .tile.flash2{animation:flash2 .85s ease both}
-  @keyframes flash2{
-    0%{filter:brightness(.34) saturate(.85);box-shadow:inset 0 0 0 0 rgba(255,255,255,0)}
-    35%{filter:none;box-shadow:inset 0 0 0 5px rgba(255,255,255,.85)}
-    68%{filter:none;box-shadow:inset 0 0 0 5px rgba(255,255,255,.85)}
-    100%{filter:brightness(.34) saturate(.85);box-shadow:inset 0 0 0 0 rgba(255,255,255,0)}
-  }
-
-  /* central timer bar: a full-width rectangle in the flow between the top and
-     bottom player groups (Design A) */
-  .coin{
-    flex:0 0 auto;width:100%;height:clamp(80px,13.5vh,104px);border-radius:14px;
-    background:var(--coin-bg);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
-    border:2px solid var(--active);
-    display:flex;flex-direction:row;align-items:center;justify-content:center;
-    position:relative;z-index:5;cursor:pointer;touch-action:none;overflow:hidden;
-    box-shadow:0 6px 22px rgba(0,0,0,.4), inset 0 1px 0 rgba(255,255,255,.06);
-    transition:border-color .25s ease, background-color .25s ease, opacity .2s ease;
-  }
-  .coin.hidden{opacity:0;pointer-events:none}
-  /* timer disabled: the bar shrinks to a small inert circle (still tappable to
-     hold-open Settings) and no time/active-player content is shown in it */
-  .coin.mini{
-    width:clamp(40px,10vw,54px);height:clamp(40px,10vw,54px);
-    border-radius:50%;align-self:center;
-  }
-  .coin.mini .timegroup{display:none}
-  /* arrow on the ring that rotates to point at the active player's tile,
-     so the active player is identified by position even if colours collide */
-  /* directional arrow is not used in the bar layout (active player is shown by
-     the rainbow box border and the bar's colour) */
-  .coin .pointer{display:none}
-  .coin .pointer_unused{
-    position:absolute;inset:calc(var(--coin-border) * -1);
-    pointer-events:none;z-index:7;transform:rotate(0deg);
-    transition:transform .45s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
-    animation:ptrHue var(--ptr-cycle,6s) linear infinite;
-  }
-  .coin .pointer.hidden{opacity:0}
-  .coin .pointer::before{
-    content:"";position:absolute;left:50%;top:-9px;transform:translateX(-50%);
-    border-left:14px solid transparent;border-right:14px solid transparent;
-    border-bottom:19px solid hsl(0,90%,55%);
-    filter:drop-shadow(0 1px 2px rgba(0,0,0,.7));
-  }
-  @keyframes ptrHue{ from{filter:hue-rotate(0deg)} to{filter:hue-rotate(360deg)} }
-  /* time shown as a stacked column (turn minutes over seconds over total minutes
-     over seconds, e.g. 30 / 59 / 12 / 59) that is ROTATED a quarter turn so it
-     faces the players seated on the long edges — a mirrored copy at each end of
-     the bar so the left- and right-edge players can both read it */
-  .coin .timegroup{
-    position:absolute;top:50%;
-    display:flex;flex-direction:column;align-items:center;line-height:1;
-    gap:clamp(2px,0.6vh,5px);
-  }
-  .coin .timegroup.left{left:clamp(74px,18.5vw,90px);transform:translate(-50%,-50%) rotate(90deg)}
-  .coin .timegroup.right{right:clamp(74px,18.5vw,90px);transform:translate(50%,-50%) rotate(-90deg)}
-  .coin .tstack{
-    display:flex;flex-direction:column;align-items:center;line-height:1;
-    font-variant-numeric:tabular-nums;letter-spacing:.01em;
-  }
-  .coin .tstack.turn .mm{font-size:calc(clamp(36px,10.5vw,50px) * var(--time-scale,1));font-weight:800}
-  .coin .tstack.turn .ss{font-size:calc(clamp(30px,8.8vw,42px) * var(--time-scale,1));font-weight:800;color:var(--muted)}
-  .coin .tstack.total .mm{font-size:calc(clamp(18px,4.6vw,24px) * var(--time-scale,1));font-weight:700;color:var(--muted)}
-  .coin .tstack.total .ss{font-size:calc(clamp(17px,4.2vw,22px) * var(--time-scale,1));font-weight:700;color:var(--muted);opacity:.85}
-  .coin.paused .tstack .mm,.coin.paused .tstack .ss{color:var(--danger)}
-
-  #hint{
-    position:fixed;top:max(14px,env(safe-area-inset-top));left:50%;transform:translateX(-50%);
-    color:var(--text);font-size:14px;font-weight:600;letter-spacing:.02em;
-    background:rgba(10,11,14,.55);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);
-    padding:8px 16px;border-radius:999px;border:1px solid var(--line);
-    opacity:0;transition:opacity .25s ease;pointer-events:none;z-index:20
-  }
-  #hint.show{opacity:1}
-  #skip{position:fixed;inset:0;z-index:15;background:transparent;display:none}
-  #skip.show{display:block}
-
-  .overlay{position:fixed;inset:0;background:rgba(0,0,0,.5);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px);
-    z-index:30;opacity:0;pointer-events:none;transition:opacity .2s ease}
-  .overlay.show{opacity:1;pointer-events:auto}
-  .sheet{
-    position:fixed;left:0;right:0;bottom:0;z-index:31;
-    background:var(--sheet);border-radius:22px 22px 0 0;
-    padding:10px 18px calc(18px + env(safe-area-inset-bottom));
-    max-height:88dvh;overflow:auto;overscroll-behavior:contain;touch-action:auto;
-    transform:translateY(102%);transition:transform .28s cubic-bezier(.2,.8,.2,1);
-    box-shadow:0 -10px 40px rgba(0,0,0,.5)
-  }
-  .sheet.show{transform:translateY(0)}
-  .grab{width:38px;height:4px;border-radius:2px;background:rgba(255,255,255,.22);margin:6px auto 12px}
-  .sheet h2{font-size:18px;font-weight:600;margin:2px 2px 14px}
-  .srow{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 2px;border-top:1px solid var(--line)}
-  .srow:first-of-type{border-top:0}
-  .srow .lab{font-size:15px;color:var(--text)}
-  .seg{display:flex;background:var(--sheet-row);border-radius:11px;padding:3px;gap:2px}
-  .seg button{
-    border:0;background:transparent;color:var(--muted);font:inherit;font-size:14px;font-weight:600;
-    padding:7px 12px;border-radius:8px;cursor:pointer;min-width:38px
-  }
-  .seg button.on{background:#3a3f49;color:#fff}
-  .stepper{display:flex;align-items:center;gap:6px;background:var(--sheet-row);border-radius:11px;padding:3px}
-  .stepper button{width:34px;height:32px;border:0;border-radius:8px;background:transparent;color:#fff;font-size:20px;cursor:pointer}
-  .stepper button:active{background:#3a3f49}
-  .stepper .val{min-width:34px;text-align:center;font-weight:700;font-variant-numeric:tabular-nums}
-  .instbtn{border:0;background:#2d7bff;color:#fff;font:inherit;font-size:14px;font-weight:700;padding:9px 18px;border-radius:10px;cursor:pointer}
-  .instbtn:active{filter:brightness(.9)}
-  #playerList{margin-top:4px}
-  .prow{padding:11px 2px;border-top:1px solid var(--line)}
-  .prow .head{display:flex;align-items:center;gap:12px}
-  .swatch{width:26px;height:26px;border-radius:8px;border:2px solid rgba(255,255,255,.25);cursor:pointer;flex:0 0 auto}
-  .prow input.name{
-    flex:1;min-width:0;background:transparent;border:0;border-bottom:1px solid var(--line);
-    color:var(--text);font:inherit;font-size:15px;padding:5px 2px;border-radius:0
-  }
-  .prow input.name:focus{outline:none;border-bottom-color:rgba(255,255,255,.45)}
-  /* per-player commander-damage toggle (⚔) */
-  .cdtoggle{
-    flex:0 0 auto;width:34px;height:30px;border-radius:9px;cursor:pointer;
-    border:1px solid var(--line);background:var(--sheet-row);color:var(--muted);
-    font-size:16px;line-height:1;
-  }
-  .cdtoggle.on{background:#3a3f49;color:#fff;border-color:rgba(255,255,255,.35)}
-  .picker{display:none;flex-wrap:wrap;gap:9px;padding:12px 2px 4px}
-  .picker.open{display:flex}
-  .picker .opt{width:30px;height:30px;border-radius:8px;border:2px solid transparent;cursor:pointer}
-  .picker .opt.sel{border-color:#fff;box-shadow:0 0 0 2px rgba(0,0,0,.5)}
-  /* custom colour tool: a native colour input styled to match the swatches, with
-     a small "+" hint so it reads as "pick your own" */
-  .picker .custom-wrap{
-    position:relative;width:30px;height:30px;border-radius:8px;cursor:pointer;
-    border:2px dashed rgba(255,255,255,.5);overflow:hidden;display:block
-  }
-  .picker .custom-wrap::after{
-    content:"+";position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-    font-size:18px;font-weight:700;color:#fff;text-shadow:0 1px 2px rgba(0,0,0,.7);pointer-events:none
-  }
-  .picker .custom{width:150%;height:150%;margin:-25%;border:0;padding:0;background:transparent;cursor:pointer}
-  .picker .custom::-webkit-color-swatch-wrapper{padding:0}
-  .picker .custom::-webkit-color-swatch{border:0}
-  .picker .custom::-moz-color-swatch{border:0}
-  .reset{
-    width:100%;margin-top:18px;padding:15px;border-radius:13px;border:1px solid rgba(255,91,91,.4);
-    background:rgba(255,91,91,.12);color:#ff7a7a;font:inherit;font-size:16px;font-weight:600;cursor:pointer
-  }
-  .reset.confirm{background:#ff5b5b;color:#fff;border-color:#ff5b5b}
-  .done{width:100%;margin-top:10px;padding:13px;border-radius:13px;border:1px solid var(--line);background:transparent;color:var(--muted);font:inherit;font-size:15px;cursor:pointer}
-
-  @media (prefers-reduced-motion: reduce){
-    *{transition:none !important;animation:none !important}
-  }
+  input[type=range]{accent-color:#2d7bff}
+  select{-webkit-appearance:none;appearance:none;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.6' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;background-position:right 12px center}
+  @keyframes obspin{to{transform:rotate(360deg)}}
+  @keyframes obpulse{0%,100%{opacity:1}50%{opacity:.4}}
+  @media (prefers-reduced-motion: reduce){*{animation-duration:.001s !important}}
 </style>
 </head>
 <body>
 <div id="app">
-  <div class="board" data-testid="board">
-    <div id="rows"></div>
-    <div class="coin" data-testid="coin" aria-label="Turn timer">
-      <div class="pointer hidden" data-testid="turn-pointer" aria-hidden="true"></div>
-      <div class="timegroup left">
-        <div class="tstack turn" data-testid="turn-time"><span class="mm">0</span><span class="ss">00</span></div>
-        <div class="tstack total" data-testid="total-time"><span class="mm">0</span><span class="ss">00</span></div>
-      </div>
-      <div class="timegroup right" aria-hidden="true">
-        <div class="tstack turn"><span class="mm">0</span><span class="ss">00</span></div>
-        <div class="tstack total"><span class="mm">0</span><span class="ss">00</span></div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div id="hint">Rolling for who goes first…</div>
-<div id="skip" data-testid="skip" aria-label="Skip"></div>
-
-<div class="overlay" data-testid="overlay"></div>
-<div class="sheet" data-testid="settings" role="dialog" aria-label="Settings">
-  <div class="grab"></div>
-  <h2>Settings</h2>
-  <div id="playerList"></div>
-  <div class="srow">
-    <span class="lab">Players</span>
-    <div class="seg" id="countSeg"></div>
-  </div>
-  <div class="srow">
-    <span class="lab">Turn timer</span>
-    <div class="seg" id="timerSeg">
-      <button data-testid="timer-on" data-timer="on">On</button>
-      <button data-testid="timer-off" data-timer="off">Off</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Starting life</span>
-    <div class="stepper">
-      <button data-testid="life-dec" aria-label="Decrease starting life">–</button>
-      <span class="val" data-testid="life-val">40</span>
-      <button data-testid="life-inc" aria-label="Increase starting life">+</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Hide change after</span>
-    <div class="stepper">
-      <button data-testid="delta-dec" aria-label="Decrease delta fade time">–</button>
-      <span class="val" data-testid="delta-val">10s</span>
-      <button data-testid="delta-inc" aria-label="Increase delta fade time">+</button>
-    </div>
-  </div>
-  <div class="srow" id="panel5Row" style="display:none">
-    <span class="lab">5th panel height (5P)</span>
-    <div class="stepper">
-      <button data-testid="panel5-dec" aria-label="Decrease 5th panel height">–</button>
-      <span class="val" data-testid="panel5-val">20%</span>
-      <button data-testid="panel5-inc" aria-label="Increase 5th panel height">+</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Life number size</span>
-    <div class="stepper">
-      <button data-testid="lifescale-dec" aria-label="Decrease life number size">–</button>
-      <span class="val" data-testid="lifescale-val">100%</span>
-      <button data-testid="lifescale-inc" aria-label="Increase life number size">+</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Timer size</span>
-    <div class="stepper">
-      <button data-testid="timerscale-dec" aria-label="Decrease timer size">–</button>
-      <span class="val" data-testid="timerscale-val">100%</span>
-      <button data-testid="timerscale-inc" aria-label="Increase timer size">+</button>
-    </div>
-  </div>
-  <div class="srow">
-    <span class="lab">Direction</span>
-    <div class="seg" id="dirSeg">
-      <button data-testid="dir-cw" data-dir="cw">↻ CW</button>
-      <button data-testid="dir-ccw" data-dir="ccw">↺ CCW</button>
-    </div>
-  </div>
-  <div class="srow" id="installRow" style="display:none">
-    <span class="lab">Install app (fullscreen)</span>
-    <button class="instbtn" data-testid="install-btn">Install</button>
-  </div>
-  <button class="reset" data-testid="reset">Reset game</button>
-  <button class="done" data-testid="settings-done">Done</button>
+  <div id="board"></div>
+  <div id="overlay"></div>
 </div>
 
 <script>
 (function(){
   "use strict";
 
-  // ---- config / test seams (URL params) -------------------------------
-  var Q = new URLSearchParams(location.search);
-  var qNum = function(k, d){ var v = parseInt(Q.get(k),10); return isNaN(v) ? d : v; };
-  var CFG = {
-    fadeMs:   qNum("fadeMs", 10000),   // delta chip auto-clear
-    holdMs:   qNum("holdMs", 350),     // hold before repeat begins
-    repMin:   qNum("repMin", 55),      // fastest repeat interval
-    repMax:   qNum("repMax", 180),     // starting repeat interval
-    dblMs:    qNum("dblMs", 250),      // single vs double tap window on coin
-    edgeGuardPx:      qNum("edgeGuardPx", 24),      // screen-edge strip where Android's back/home swipe gesture can originate
-    edgeGuardMoveTol: qNum("edgeGuardMoveTol", 14), // px of movement allowed before an edge-originating touch is treated as a swipe, not a tap
-    tickMs:   200,
-    nosplash: Q.has("nosplash"),
-    fresh:    Q.has("fresh"),
-    seed:     Q.has("seed") ? (qNum("seed",1) >>> 0) : null
-  };
-  var reduceMotion = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+  var PAL = ['#C0392B','#2471C7','#1E9E54','#D4A017','#8E44AD','#16A085','#7F8C8D','#E4568B','#E67E22','#3BA7DB','#ECECEC','#2D6A4F'];
+  var KEY = 'cmdr-obsidian-proto-v3';
+  var BOX_RADIUS = 20;
+  var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
-  // ---- palette ---------------------------------------------------------
-  var PALETTE = {
-    crimson:"#C0392B", azure:"#2471C7", emerald:"#1E9E54", amber:"#D4A017",
-    violet:"#7D4FC0", teal:"#179B94", slate:"#39414E", rose:"#C2477A",
-    orange:"#D2733A", sky:"#3AA0D9", paper:"#E9E4D6", forest:"#2F6B3A"
-  };
-  var COLOR_ORDER = ["crimson","azure","emerald","amber","violet","teal","slate","rose","orange","sky","paper","forest"];
-  function fgFor(hex){
-    var r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
-    var lum=(0.299*r+0.587*g+0.114*b)/255;
-    return lum>0.62 ? "#15130c" : "#ffffff";
-  }
-  // resolve a stored colour (either a palette name or a custom "#rrggbb" hex)
-  function colorHex(c){
-    if(PALETTE[c]) return PALETTE[c];
-    return (typeof c==="string" && /^#[0-9a-fA-F]{6}$/.test(c)) ? c : "#333333";
-  }
+  function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
 
-  // ---- state -----------------------------------------------------------
-  var STORE_KEY = "mtg-commander-tracker-v1";
-  var S = {
-    count: 4,
-    startingLife: 40,
-    direction: "cw",
-    deltaFadeMs: CFG.fadeMs,  // how long the +/- change chip stays visible
-    ptrCycleSec: 6,           // seconds for one full hue cycle of the turn arrow
-    panel5Share: 0.2,         // 5-player: fraction of non-timer height for the 5th (full-width) panel; top+middle rows split the rest equally
-    lifeScale: 1,             // multiplier for the life-number font size
-    timerScale: 1,            // multiplier for the timer font size
-    timerEnabled: true,       // if false: no turn timer / active-player tracking; the bar becomes a small inert circle
-    players: [],            // {name, color, cd?}
-    life: [],               // per player
-    totals: [],             // banked ms per player
-    cmdDmg: [],             // count x count matrix: cmdDmg[dealer][receiver] = commander damage dealt
-    active: null,           // index or null
-    paused: false,
-    phase: "idle",          // idle | rolling | playing
-    turnAccum: 0,           // ms accumulated in current turn (running portions)
-    segStart: null          // timestamp when current running segment began
-  };
-  var deltaSum = [];         // per player, since last commit
-  var fadeTimer = [];        // per player
+  var App = {
+    state: null,
+    press: null, bar: null, rollTimer: null, rollRaf: null, rollTarget: null,
+    lastTap: 0, passTimer: null, tick: null,
+    _gap: 6, _numCap: 1e9,
 
-  function defaultPlayers(n){
-    var arr=[];
-    for(var i=0;i<n;i++){
-      arr.push({ name:"Player "+(i+1), color: COLOR_ORDER[i % COLOR_ORDER.length] });
-    }
-    return arr;
-  }
-
-  // (Re)size the commander-damage matrix to the current player count, keeping any
-  // existing values. cmdDmg[dealer][receiver] = commander damage dealt so far.
-  function ensureCmdMatrix(){
-    var n = S.count, src = Array.isArray(S.cmdDmg) ? S.cmdDmg : [];
-    var m = [];
-    for(var d=0; d<n; d++){
-      m[d] = [];
-      for(var r=0; r<n; r++){
-        var v = (src[d] && typeof src[d][r]==="number") ? src[d][r] : 0;
-        m[d][r] = (d===r) ? 0 : Math.max(0, v);
+    // ---------- roster / fresh / persistence ----------
+    seedRoster: function(){
+      var names = ['Philip','Yannic','Maxi','Till','Maik','Pablo','Nasso','Robin','Franzi','Katha','Jan'];
+      return names.map(function(name,i){ return { name:name, color:PAL[i%PAL.length], used:0 }; });
+    },
+    fresh: function(count){
+      var prev = this.state || {};
+      var sl = prev.startingLife != null ? prev.startingLife : 40;
+      var te = prev.timerEnabled != null ? prev.timerEnabled : true;
+      var roster = (prev.roster && prev.roster.length) ? prev.roster : (this._seedRoster || this.seedRoster());
+      var players = [];
+      for(var i=0;i<count;i++){
+        var keep = prev.players && prev.players[i];
+        if(keep) players.push(keep);
+        else { var r = roster[i] || {}; players.push({ name: r.name || ('Player '+(i+1)), color: r.color || PAL[i%PAL.length], cd:false }); }
       }
-    }
-    S.cmdDmg = m;
-  }
-  function clearCmdMatrix(){ S.cmdDmg = []; ensureCmdMatrix(); }
-
-  // ---- persistence (guarded; degrades to in-memory) --------------------
-  function save(){
-    try{
-      var data = {
-        count:S.count, startingLife:S.startingLife, direction:S.direction,
-        deltaFadeMs:S.deltaFadeMs, ptrCycleSec:S.ptrCycleSec,
-        panel5Share:S.panel5Share, lifeScale:S.lifeScale, timerScale:S.timerScale, timerEnabled:S.timerEnabled,
-        players:S.players, life:S.life, totals:S.totals, cmdDmg:S.cmdDmg, active:S.active,
-        paused:S.paused, turnAccum:currentTurn()
+      var fill = function(v){ var a=[]; for(var k=0;k<count;k++) a.push(v); return a; };
+      return {
+        phase: te ? 'rolling' : 'playing',
+        count: count, direction: Math.random()<0.5?1:-1, startingLife: sl,
+        players: players, roster: roster,
+        life: fill(sl), lifeMin: fill(sl), lifeMax: fill(sl),
+        totals: fill(0), turns: fill(0), longest: fill(0),
+        cmd: (function(){ var m=[]; for(var d=0;d<count;d++){ var row=[]; for(var r=0;r<count;r++) row.push(0); m.push(row);} return m; })(),
+        elims: [],
+        active: -1, paused: false,
+        turnAccum: 0, turnResume: null,
+        startedAt: null, endedAt: null,
+        dealing: -1,
+        deltas: fill(null),
+        timerEnabled: te,
+        deltaFadeMs: prev.deltaFadeMs != null ? prev.deltaFadeMs : 4000,
+        lifeScale: prev.lifeScale != null ? prev.lifeScale : 100,
+        timerScale: prev.timerScale != null ? prev.timerScale : 100,
+        glowStrength: prev.glowStrength != null ? prev.glowStrength : 60,
+        cdScale: prev.cdScale != null ? prev.cdScale : 140,
+        soloScale: prev.soloScale != null ? prev.soloScale : 100,
+        advOpacity: prev.advOpacity != null ? prev.advOpacity : 50,
+        colorBleed: prev.colorBleed != null ? prev.colorBleed : 100,
+        advOpen: false,
+        settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'',
+        rollIdx:-1
       };
-      localStorage.setItem(STORE_KEY, JSON.stringify(data));
-    }catch(e){/* storage unavailable */}
-  }
-  function load(){
-    if(CFG.fresh) return null;
-    try{
-      var raw = localStorage.getItem(STORE_KEY);
-      if(!raw) return null;
-      var d = JSON.parse(raw);
-      if(!d || !Array.isArray(d.players)) return null;
-      return d;
-    }catch(e){ return null; }
-  }
+    },
+    save: function(){
+      var s = this.state, out = {};
+      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity'].forEach(function(k){ out[k]=s[k]; });
+      out.turnAccum = this.curTurnMs();
+      out.turnResume = s.turnResume ? Date.now() : null;
+      try{ localStorage.setItem(KEY, JSON.stringify(out)); }catch(e){}
+    },
 
-  // ---- rng -------------------------------------------------------------
-  var _seed = CFG.seed;
-  function rnd(){
-    if(_seed===null) return Math.random();
-    _seed |= 0; _seed = (_seed + 0x6D2B79F5) | 0;
-    var t = Math.imul(_seed ^ (_seed >>> 15), 1 | _seed);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  }
-  function pickFirst(){ return Math.floor(rnd()*S.count) % S.count; }
+    // ---------- state helpers ----------
+    set: function(patch, cb){ Object.assign(this.state, patch); this.save(); this.paint(); if(cb) cb(); },
+    setStateLocal: function(patch){ Object.assign(this.state, patch); this.paint(); },
 
-  // Seating ring: players ordered by the angle of their tile around the board
-  // centre, so turns follow the physical clockwise/counter-clockwise layout on
-  // screen instead of the internal index order (which could skip across seats).
-  var seatOrder = [];   // clockwise list of player indices
-  var seatRank = [];    // player index -> position within seatOrder
-  function computeSeatOrder(){
-    // order seats by angle around the coin (the visual centre of the ring)
-    var c = el.coin.getBoundingClientRect();
-    var cx = c.left + c.width/2, cy = c.top + c.height/2;
-    var arr = [];
-    for(var i=0;i<S.count;i++){
-      var t = tileEls[i]; if(!t) continue;
-      var r = t.tile.getBoundingClientRect();
-      // atan2 with screen (y-down) coords increases clockwise from north
-      var ang = Math.atan2((r.top+r.height/2)-cy, (r.left+r.width/2)-cx);
-      arr.push({ i:i, ang:ang });
-    }
-    arr.sort(function(a,b){ return a.ang - b.ang; });
-    seatOrder = arr.map(function(o){ return o.i; });
-    seatRank = [];
-    seatOrder.forEach(function(idx, pos){ seatRank[idx] = pos; });
-  }
-  function nextIndex(i){
-    if(!seatOrder.length || seatRank[i]==null){
-      return S.direction==="cw" ? (i+1)%S.count : (i-1+S.count)%S.count;
-    }
-    var step = S.direction==="cw" ? 1 : -1;
-    var pos = (seatRank[i] + step + seatOrder.length) % seatOrder.length;
-    return seatOrder[pos];
-  }
-  function directionOrder(){
-    var base = seatOrder.length ? seatOrder.slice() : (function(){ var o=[]; for(var i=0;i<S.count;i++) o.push(i); return o; })();
-    if(S.direction!=="cw") base.reverse();
-    return base;
-  }
+    // ---------- seat ring ----------
+    RING: { 2:[0,1], 3:[0,1,2], 4:[0,1,3,2], 5:[0,1,3,4,2], 6:[0,1,3,5,4,2] },
+    seatRing: function(count){ return this.RING[count] || (function(){var a=[];for(var k=0;k<count;k++)a.push(k);return a;})(); },
+    ringPos: function(count, seatIdx){ return this.seatRing(count).indexOf(seatIdx); },
+    ringSeat: function(count, ringIdx){ var r=this.seatRing(count); return r[((ringIdx%r.length)+r.length)%r.length]; },
 
-  // ---- dom refs --------------------------------------------------------
-  var el = {
-    board: document.querySelector('[data-testid="board"]'),
-    rows: document.getElementById("rows"),
-    coin: document.querySelector('[data-testid="coin"]'),
-    pointer: document.querySelector('[data-testid="turn-pointer"]'),
-    turn: document.querySelector('[data-testid="turn-time"]'),
-    total: document.querySelector('[data-testid="total-time"]'),
-    turnStacks: document.querySelectorAll('.coin .tstack.turn'),
-    totalStacks: document.querySelectorAll('.coin .tstack.total'),
-    overlay: document.querySelector('[data-testid="overlay"]'),
-    sheet: document.querySelector('[data-testid="settings"]'),
-    countSeg: document.getElementById("countSeg"),
-    dirSeg: document.getElementById("dirSeg"),
-    timerSeg: document.getElementById("timerSeg"),
-    lifeVal: document.querySelector('[data-testid="life-val"]'),
-    lifeDec: document.querySelector('[data-testid="life-dec"]'),
-    lifeInc: document.querySelector('[data-testid="life-inc"]'),
-    deltaVal: document.querySelector('[data-testid="delta-val"]'),
-    deltaDec: document.querySelector('[data-testid="delta-dec"]'),
-    deltaInc: document.querySelector('[data-testid="delta-inc"]'),
-    panel5Val: document.querySelector('[data-testid="panel5-val"]'),
-    panel5Dec: document.querySelector('[data-testid="panel5-dec"]'),
-    panel5Inc: document.querySelector('[data-testid="panel5-inc"]'),
-    panel5Row: document.getElementById("panel5Row"),
-    lifeScaleVal: document.querySelector('[data-testid="lifescale-val"]'),
-    lifeScaleDec: document.querySelector('[data-testid="lifescale-dec"]'),
-    lifeScaleInc: document.querySelector('[data-testid="lifescale-inc"]'),
-    timerScaleVal: document.querySelector('[data-testid="timerscale-val"]'),
-    timerScaleDec: document.querySelector('[data-testid="timerscale-dec"]'),
-    timerScaleInc: document.querySelector('[data-testid="timerscale-inc"]'),
-    playerList: document.getElementById("playerList"),
-    reset: document.querySelector('[data-testid="reset"]'),
-    done: document.querySelector('[data-testid="settings-done"]'),
-    hint: document.getElementById("hint"),
-    skip: document.querySelector('[data-testid="skip"]')
-  };
-
-  // ---- layout (Design A) -----------------------------------------------
-  // A full-width timer bar splits the screen into a top group and a bottom
-  // group of player boxes. Top group faces the top edge (rotated 180). Numbers
-  // are centred in each box; the bar has its own space so nothing is covered.
-  // groups are arrays of ROWS (each row an array of player indices); row height
-  // is weighted by box count, so each half is proportional to its player count.
-  function layoutFor(n){
-    switch(n){
-      case 2: return { top:[[0]],       bottom:[[1]] };
-      case 3: return { top:[[0]],       bottom:[[1,2]] };
-      case 4: return { top:[[0,1]],     bottom:[[2,3]] };
-      case 5: return { top:[[0,1]],     bottom:[[2,3],[4]] };   // 2 top / 2 middle / 1 bottom
-      case 6: return { top:[[0,1,2]],   bottom:[[3,4,5]] };
-      default:return { top:[[0,1]],     bottom:[[2,3]] };
-    }
-  }
-
-  var tileEls = []; // index -> {tile, life, delta, badge}
-  var boardRows = []; // [{el,len,group}] per layout row, for proportional flex
-
-  function buildBoard(){
-    el.rows.innerHTML = "";
-    tileEls = [];
-    var L = layoutFor(S.count);
-
-    function makeTile(i, rot){
-      var tile = document.createElement("div");
-      tile.className = "tile" + (rot ? " rot" : "");
-      tile.setAttribute("data-testid","tile");
-      tile.setAttribute("data-player-index", String(i));
-      tile.setAttribute("data-rotated", rot ? "true" : "false");
-
-      var dec = document.createElement("div");
-      dec.className = "zone dec";
-      dec.setAttribute("data-testid","dec");
-      dec.setAttribute("role","button");
-      dec.setAttribute("tabindex","0");
-      dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
-      dec.innerHTML = '<span class="sign">–</span>';
-
-      var inc = document.createElement("div");
-      inc.className = "zone inc";
-      inc.setAttribute("data-testid","inc");
-      inc.setAttribute("role","button");
-      inc.setAttribute("tabindex","0");
-      inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
-      inc.innerHTML = '<span class="sign">+</span>';
-
-      var delta = document.createElement("div");
-      delta.className = "delta";
-      delta.setAttribute("data-testid","delta");
-
-      var life = document.createElement("div");
-      life.className = "life";
-      life.setAttribute("data-testid","life");
-
-      var badge = document.createElement("div");
-      badge.className = "badge";
-      badge.setAttribute("data-testid","badge");
-
-      var rb = document.createElement("div");   // rainbow ring for the active player
-      rb.className = "rb";
-
-      // commander-damage strip (only shown for players with CD tracking enabled):
-      // a ⚔ entry chip plus one chip per opponent showing damage dealt to them
-      var cdstrip = document.createElement("div");
-      cdstrip.className = "cdstrip";
-      cdstrip.setAttribute("data-testid","cdstrip-"+i);
-
-      tile.appendChild(dec);
-      tile.appendChild(inc);
-      tile.appendChild(delta);
-      tile.appendChild(life);
-      tile.appendChild(badge);
-      tile.appendChild(rb);
-      tile.appendChild(cdstrip);
-
-      tileEls[i] = { tile:tile, life:life, delta:delta, badge:badge, dec:dec, inc:inc, cdstrip:cdstrip };
-      wireZone(dec, i, -1);
-      wireZone(inc, i, +1);
-      wireCdStrip(cdstrip, i);
-      applyTileColor(i);
-      return tile;
-    }
-    boardRows = [];
-    function makeRow(indices, rot, group){
-      var row = document.createElement("div");
-      row.className = "row";
-      indices.forEach(function(i){ row.appendChild(makeTile(i, rot)); });
-      boardRows.push({ el:row, len:indices.length, group:group });
-      return row;
-    }
-
-    // top group rows, then the timer bar, then the bottom group rows
-    L.top.forEach(function(r){ el.rows.appendChild(makeRow(r, true, "top")); });
-    el.rows.appendChild(el.coin);   // move the timer bar into the flow
-    L.bottom.forEach(function(r){ el.rows.appendChild(makeRow(r, false, "bottom")); });
-
-    updateTiles();
-    applyHalfFlex();         // proportional row heights (per box count; 5p tunable)
-    computeSeatOrder();      // tiles exist now; derive the clockwise seating ring
-    applyTileOrientation();  // centre + size each number
-    updateCoin();
-  }
-
-  // Set each row's flex-grow so each half's height is proportional to its player
-  // count. In 5-player mode the 5th (full-width) panel gets S.panel5Share of the
-  // non-timer height and the top + middle rows split the rest EQUALLY, so the
-  // four quadrant panels stay symmetric and the timer bar slides with them as the
-  // 5th panel grows/shrinks.
-  function applyHalfFlex(){
-    if(S.count === 5){
-      var p5 = S.panel5Share;
-      var half = (1 - p5) / 2;
-      boardRows.forEach(function(r){
-        // group "top" = top row; group "bottom" = middle row (len 2) + 5th panel (len 1)
-        var f = (r.len === 1 && r.group === "bottom") ? p5 : half;
-        r.el.style.flex = f + " 1 0%";
-      });
-    } else {
-      boardRows.forEach(function(r){ r.el.style.flex = r.len + " 1 0%"; });
-    }
-  }
-
-  // Align each number along the box's longest edge: clearly tall boxes get a
-  // quarter turn so the number runs vertically (left column reads from the
-  // left, right column from the right); near-square / wide boxes stay upright.
-  // Sized for up to 3 digits. The timer bar has its own band, nothing overlaps.
-  function applyTileOrientation(){
-    var b = el.board.getBoundingClientRect();
-    var midX = b.left + b.width/2;
-    for(var i=0;i<S.count;i++){
-      var t = tileEls[i]; if(!t) continue;
-      var r = t.tile.getBoundingClientRect();
-      var tall = r.height > r.width*1.1;
-      var rot = t.tile.classList.contains("rot");
-      var leftCol = (r.left + r.width/2) < midX;
-      // local quarter-turn applied to the number (− parent's 180° for the top
-      // group) so it reads upright for the seat on that long edge
-      var theta = tall ? ((leftCol ? 90 : -90) - (rot ? 180 : 0)) : 0;
-      t.tile.classList.toggle("tall", r.height > r.width);   // drives the +/- split
-      // flip the +/- bands so − is on the player's left, + on their right for
-      // BOTH the left-edge and right-edge seats (default lands correct only when
-      // leftCol === rot; flip the other diagonal)
-      t.tile.classList.toggle("zflip", tall && (leftCol !== rot));
-      if(tall){
-        // rotated: glyph height bound by box width, number length by box height
-        var px = Math.min(r.width*0.82, r.height/1.9, 240);
-        t.life.style.fontSize = Math.round(Math.max(16, Math.max(20, px) * S.lifeScale)) + "px";
-        t.life.style.transform = "rotate(" + theta + "deg)";
-      } else {
-        var px2 = Math.min(r.height*0.6, r.width/1.7, 200);
-        t.life.style.fontSize = Math.round(Math.max(16, Math.max(20, px2) * S.lifeScale)) + "px";
-        t.life.style.transform = "";
-      }
-
-      // delta chip in the box's inner corner (nearest the timer), rotated to the
-      // SAME orientation as the number so the seated player reads it upright too.
-      // Anchored by its centre + translate(-50%,-50%) so the rotation can't push
-      // it off the tile. The timer-facing edge is always the tile's LOCAL top.
-      var ds = t.delta.style;
-      var inset = 34;
-      ds.top = inset + "px"; ds.bottom = "auto"; ds.right = "auto";
-      ds.transformOrigin = "center center";
-      if(r.width > b.width*0.7){            // full-width box (5th player) -> top-right
-        ds.left = "calc(100% - " + inset + "px)";
-      } else if(rot === leftCol){           // local top-left corner is the inner one
-        ds.left = inset + "px";
-      } else {                              // local top-right corner is the inner one
-        ds.left = "calc(100% - " + inset + "px)";
-      }
-      ds.transform = "translate(-50%,-50%) rotate(" + theta + "deg)";
-
-      // commander-damage strip: centred on the timer-facing (local top) edge and
-      // rotated to the same orientation as the number so it reads upright for the
-      // seat; sits clear of the corner delta.
-      if(t.cdstrip){
-        var cs = t.cdstrip.style;
-        cs.top = "20px"; cs.left = "50%"; cs.bottom = "auto"; cs.right = "auto";
-        cs.transformOrigin = "center center";
-        cs.transform = "translate(-50%,-50%) rotate(" + theta + "deg)";
-      }
-    }
-  }
-
-  function applyTileColor(i){
-    var hex = colorHex(S.players[i].color);
-    tileEls[i].tile.style.setProperty("--tile", hex);
-    tileEls[i].tile.style.setProperty("--fg", fgFor(hex));
-    tileEls[i].tile.setAttribute("data-color", S.players[i].color);
-  }
-
-  function updateTiles(){
-    for(var i=0;i<S.count;i++){
-      var t = tileEls[i]; if(!t) continue;
-      t.life.textContent = String(S.life[i]);
-      t.tile.setAttribute("data-life", String(S.life[i]));
-      var d = deltaSum[i] || 0;
-      t.tile.setAttribute("data-delta", String(d));
-      t.tile.setAttribute("data-active", S.active===i ? "true" : "false");
-      // rainbow border only on the active player while their clock is running
-      t.tile.classList.toggle("turn", S.active===i && S.phase==="playing" && !S.paused);
-    }
-    renderCmdBoxes();
-  }
-
-  // Build/refresh each tile's commander-damage strip. A CD-enabled player's tile
-  // shows a ⚔ entry chip plus, per opponent, the damage that player has dealt to
-  // them (chip in the opponent's colour; red once it reaches the lethal 21). The
-  // strip is hidden for players without CD tracking.
-  var CMD_LETHAL = 21;
-  function renderCmdBoxes(){
-    for(var i=0;i<S.count;i++){
-      var t = tileEls[i]; if(!t || !t.cdstrip) continue;
-      var on = !!(S.players[i] && S.players[i].cd);
-      t.cdstrip.classList.toggle("show", on);
-      t.tile.classList.toggle("has-cd", on);
-      if(!on){ t.cdstrip.innerHTML = ""; continue; }
-      var html = '<span class="cd-enter" aria-hidden="true">⚔</span>';
-      for(var j=0;j<S.count;j++){
-        if(j===i) continue;
-        var v = (S.cmdDmg[i] && S.cmdDmg[i][j]) || 0;
-        if(v<=0) continue;
-        var hex = colorHex(S.players[j].color);
-        html += '<span class="cdbox'+(v>=CMD_LETHAL?" lethal":"")+'" data-testid="cd-'+i+'-'+j+'"'
-              + ' style="background:'+hex+';color:'+fgFor(hex)+'">'+v+'</span>';
-      }
-      t.cdstrip.innerHTML = html;
-    }
-  }
-
-  // ---- life changes ----------------------------------------------------
-  var press = {}; // index -> {holdTimer, repTimer, interval, dir}
-  var cdMode = null; // index of the player currently dealing commander damage, or null
-
-  function applyChange(i, dir){
-    // in a dealer's mode, life lost by an opponent is recorded as that dealer's
-    // commander damage (and undo/increase reduces it), clamped at 0
-    if(cdMode!=null && i!==cdMode){
-      S.cmdDmg[cdMode][i] = Math.max(0, (S.cmdDmg[cdMode][i]||0) - dir);
-      renderCmdBoxes();
-    }
-    S.life[i] += dir;
-    deltaSum[i] = (deltaSum[i]||0) + dir;
-    var t = tileEls[i];
-    t.life.textContent = String(S.life[i]);
-    t.tile.setAttribute("data-life", String(S.life[i]));
-    var d = deltaSum[i];
-    t.delta.textContent = (d>0?"+":"") + d;
-    t.delta.classList.add("show");
-    t.tile.setAttribute("data-delta", String(d));
-    armFade(i);
-    save();
-  }
-  function armFade(i){
-    if(fadeTimer[i]) clearTimeout(fadeTimer[i]);
-    fadeTimer[i] = setTimeout(function(){
-      deltaSum[i] = 0;
-      tileEls[i].delta.classList.remove("show");
-      tileEls[i].tile.setAttribute("data-delta","0");
-    }, S.deltaFadeMs);
-  }
-  // Android's edge-swipe gestures (back from the left/right edge, home from the
-  // bottom edge) can bleed a pointerdown (and a little movement) through to the
-  // page before the OS takes over the gesture. Since this board's tap zones sit
-  // flush against the physical screen edges, a swipe-to-go-back could otherwise
-  // be misread as a life-change tap. Touches that START within the edge strip
-  // are held "pending" instead of applied immediately: a genuine tap still
-  // resolves the instant the finger lifts (no added delay for a normal tap), but
-  // a swipe (movement past the tolerance, or the OS cancelling the touch) is
-  // dropped with no life change. A finger held past the normal hold-to-repeat
-  // threshold is trusted as a deliberate press even if it started on the edge.
-  function isEdgeStart(x, y){
-    var g = CFG.edgeGuardPx;
-    return x <= g || x >= window.innerWidth - g || y >= window.innerHeight - g;
-  }
-
-  function commitPress(i, dir, z){
-    applyChange(i, dir);
-    var st = press[i] = { dir:dir, zone:z, interval:CFG.repMax };
-    st.holdTimer = setTimeout(function repeat(){
-      applyChange(i, dir);
-      st.interval = Math.max(CFG.repMin, Math.round(st.interval*0.84));
-      st.repTimer = setTimeout(repeat, st.interval);
-    }, CFG.holdMs);
-  }
-
-  function startPress(e, i, dir){
-    if(S.phase==="rolling") return;
-    // in dealing mode, tapping the dealer's own (black) tile exits the mode; the
-    // dealer can't edit their own life while dealing
-    if(cdMode!=null && i===cdMode){ e.preventDefault(); exitCdMode(); return; }
-    e.preventDefault();
-    try{ if(e.pointerId!=null) e.target.setPointerCapture(e.pointerId); }catch(_){}
-    var z = tileEls[i][dir<0?"dec":"inc"]; z.classList.add("pressing");
-
-    if(isEdgeStart(e.clientX, e.clientY)){
-      var ox = e.clientX, oy = e.clientY;
-      var guard = {};
-      guard.moveHandler = function(ev){
-        if(Math.hypot(ev.clientX-ox, ev.clientY-oy) > CFG.edgeGuardMoveTol){
-          endPress(i);   // moved like a swipe: abort, no life change
+    // ---------- roll ----------
+    startRoll: function(){
+      var s = this.state, self = this;
+      var target = Math.floor(Math.random()*s.count);
+      this.rollTarget = target;
+      if(reduceMotion){ this.finishRoll(target); return; }
+      var ROLL_MS = 2500, PAUSE_MS = 500;
+      var start = performance.now(), lastIdx = -1;
+      var ring = this.seatRing(s.count);
+      var targetRingPos = ring.indexOf(target);
+      var frame = function(now){
+        var t = now - start;
+        if(t >= ROLL_MS){
+          self.rollRaf = null;
+          self.state.rollIdx = target; self.paintBoard();
+          self.rollTimer = setTimeout(function(){ self.finishRoll(target); }, PAUSE_MS);
+          return;
         }
+        var p = t/ROLL_MS, eased = 1 - Math.pow(1-p,3);
+        var steps = Math.floor(eased*(s.count*7))*s.direction + targetRingPos;
+        var idx = ring[((steps%s.count)+s.count)%s.count];
+        if(idx !== lastIdx){ lastIdx = idx; self.state.rollIdx = idx; self.paintBoard(); }
+        self.rollRaf = requestAnimationFrame(frame);
       };
-      z.addEventListener("pointermove", guard.moveHandler);
-      guard.timer = setTimeout(function(){
-        z.removeEventListener("pointermove", guard.moveHandler);
-        commitPress(i, dir, z);   // still down past the hold threshold: a deliberate press
-      }, CFG.holdMs);
-      press[i] = { dir:dir, zone:z, guard:guard };
-      return;
-    }
-
-    commitPress(i, dir, z);
-  }
-  function endPress(i){
-    var st = press[i]; if(!st) return;
-    if(st.guard){
-      if(st.guard.timer) clearTimeout(st.guard.timer);
-      if(st.guard.moveHandler) st.zone.removeEventListener("pointermove", st.guard.moveHandler);
-      st.zone.classList.remove("pressing");
-      delete press[i];
-      return;
-    }
-    if(st.holdTimer) clearTimeout(st.holdTimer);
-    if(st.repTimer) clearTimeout(st.repTimer);
-    if(st.zone) st.zone.classList.remove("pressing");
-    delete press[i];
-  }
-  function endTap(i){
-    // a clean pointerup while still pending (edge-guarded) confirms a real,
-    // quick tap: commit exactly one change instead of discarding it
-    var st = press[i];
-    if(st && st.guard){
-      if(st.guard.timer) clearTimeout(st.guard.timer);
-      if(st.guard.moveHandler) st.zone.removeEventListener("pointermove", st.guard.moveHandler);
-      var z = st.zone; z.classList.remove("pressing");
-      delete press[i];
-      applyChange(i, st.dir);
-      return;
-    }
-    endPress(i);
-  }
-  function endAllPress(){ Object.keys(press).forEach(function(k){ endPress(+k); }); }
-
-  function wireZone(zone, i, dir){
-    zone.addEventListener("pointerdown", function(e){ startPress(e,i,dir); });
-    zone.addEventListener("pointerup", function(){ endTap(i); });
-    zone.addEventListener("pointercancel", function(){ endPress(i); });
-    zone.addEventListener("keydown", function(e){
-      if(e.key===" "||e.key==="Enter"){ e.preventDefault(); if(S.phase!=="rolling") applyChange(i,dir); }
-    });
-  }
-  window.addEventListener("pointerup", endAllPress);
-  window.addEventListener("pointercancel", endAllPress);
-  window.addEventListener("blur", endAllPress);
-
-  // ---- commander-damage dealing mode -----------------------------------
-  // Tapping a CD-enabled player's strip enters that player's dealing mode: every
-  // OTHER tile recolours to the dealer's fill + text colour (so life edited there
-  // is recorded as that dealer's commander damage) and the dealer's own tile goes
-  // black. Tapping the dealer tile exits.
-  function enterCdMode(a){
-    if(cdMode!=null) exitCdMode();
-    cdMode = a;
-    endAllPress();
-    el.board.classList.add("cd-active");
-    var hex = colorHex(S.players[a].color), fg = fgFor(hex);
-    for(var i=0;i<S.count;i++){
-      var t = tileEls[i]; if(!t) continue;
-      if(i===a){
-        // dealer's own tile goes black, their number shown in their own colour
-        t.tile.classList.add("cd-dealer");
-        t.tile.style.setProperty("--tile", "#0a0a0a");
-        t.tile.style.setProperty("--fg", hex);
-      } else {
-        t.tile.style.setProperty("--tile", hex);
-        t.tile.style.setProperty("--fg", fg);
+      this.rollRaf = requestAnimationFrame(frame);
+    },
+    finishRoll: function(target){
+      if(this.rollTimer){ clearTimeout(this.rollTimer); this.rollTimer=null; }
+      if(this.rollRaf){ cancelAnimationFrame(this.rollRaf); this.rollRaf=null; }
+      this.set({ phase:'playing', active:target, rollIdx:-1, turnAccum:0, turnResume:Date.now(), startedAt:this.state.startedAt||Date.now() });
+    },
+    skipRoll: function(){
+      if(this.state.phase === 'rolling'){
+        if(this.rollRaf){ cancelAnimationFrame(this.rollRaf); this.rollRaf=null; }
+        this.finishRoll(this.rollTarget != null ? this.rollTarget : Math.floor(Math.random()*this.state.count));
       }
-    }
-    renderCmdBoxes();
-  }
-  function exitCdMode(){
-    if(cdMode==null) return;
-    cdMode = null;
-    el.board.classList.remove("cd-active");
-    for(var i=0;i<S.count;i++){
-      if(tileEls[i]) tileEls[i].tile.classList.remove("cd-dealer");
-      applyTileColor(i);   // restore each tile's own colour
-    }
-    updateCoin();
-    renderCmdBoxes();
-    save();
-  }
-  function wireCdStrip(strip, i){
-    strip.addEventListener("pointerdown", function(e){
-      if(S.phase==="rolling") return;
-      if(!(S.players[i] && S.players[i].cd)) return;
-      e.preventDefault(); e.stopPropagation();
-      if(cdMode===i) exitCdMode();
-      else if(cdMode==null) enterCdMode(i);
-    });
-  }
+    },
 
-  // ---- timer -----------------------------------------------------------
-  function currentTurn(){
-    return S.turnAccum + ((!S.paused && S.segStart!=null) ? (Date.now()-S.segStart) : 0);
-  }
-  function fmt(ms){
-    var s = Math.floor(ms/1000);
-    var h = Math.floor(s/3600);
-    var m = Math.floor((s%3600)/60);
-    var ss = s%60;
-    var p = function(x){ return (x<10?"0":"")+x; };
-    return h>0 ? (h+":"+p(m)+":"+p(ss)) : (m+":"+p(ss));
-  }
-  // vertical display: top line = minutes (h:mm once past an hour), bottom = seconds
-  function fmtParts(ms){
-    var s = Math.floor(ms/1000);
-    var h = Math.floor(s/3600);
-    var m = Math.floor((s%3600)/60);
-    var ss = s%60;
-    var p = function(x){ return (x<10?"0":"")+x; };
-    return { mm: (h>0 ? (h+":"+p(m)) : p(m)), ss: p(ss) };
-  }
-  function setStacks(stacks, ms){
-    var parts = fmtParts(ms);
-    for(var i=0;i<stacks.length;i++){
-      var mm = stacks[i].querySelector(".mm"), ss = stacks[i].querySelector(".ss");
-      if(mm && mm.textContent !== parts.mm) mm.textContent = parts.mm;
-      if(ss && ss.textContent !== parts.ss) ss.textContent = parts.ss;
-    }
-  }
-  // Rotate the coin's pointer so it aims at the active player's tile. The tile
-  // position only changes on turn pass / layout change, so we cache the last
-  // pointed-at index and only re-measure (forcing reflow) when it actually
-  // changes or when forced (resize / board rebuild).
-  var pointerActive = null;
-  var pointerDeg = null; // accumulated angle (unbounded) so we always rotate the short way
-  function updatePointer(force){
-    var a = (S.phase==="playing" && S.active!=null) ? S.active : null;
-    el.pointer.classList.toggle("hidden", a===null);
-    if(a===null){ pointerActive=null; return; }
-    if(!force && a===pointerActive) return;
-    pointerActive = a;
-    var t = tileEls[a]; if(!t) return;
-    var cr = el.coin.getBoundingClientRect();
-    var tr = t.tile.getBoundingClientRect();
-    var dx = (tr.left+tr.width/2) - (cr.left+cr.width/2);
-    var dy = (tr.top+tr.height/2) - (cr.top+cr.height/2);
-    var target = Math.atan2(dy, dx) * 180 / Math.PI + 90; // arrow's rest position points up
-    if(pointerDeg===null){
-      pointerDeg = target;
-    } else {
-      // step by the shortest signed angle so the arrow eases to the next seat
-      // instead of unwinding the long way round when the ring wraps
-      var delta = ((target - pointerDeg) % 360 + 540) % 360 - 180;
-      pointerDeg += delta;
-    }
-    el.pointer.style.transform = "rotate(" + pointerDeg + "deg)";
-  }
+    // ---------- timer ----------
+    curTurnMs: function(){ var s=this.state; return s.turnAccum + (s.turnResume ? Date.now()-s.turnResume : 0); },
+    pass: function(){
+      var s = this.state;
+      if(s.phase!=='playing' || !s.timerEnabled || s.active<0) return;
+      var ms = this.curTurnMs();
+      var totals = s.totals.slice(); totals[s.active] += ms;
+      var turns = s.turns.slice(); turns[s.active] += 1;
+      var longest = s.longest.slice(); longest[s.active] = Math.max(longest[s.active], ms);
+      var next = s.active, tries = 0, ringPos = this.ringPos(s.count, next);
+      do { ringPos = (ringPos + s.direction + s.count) % s.count; next = this.ringSeat(s.count, ringPos); tries++; } while(tries < s.count && this.isDead(next));
+      this.set({ totals:totals, turns:turns, longest:longest, active:next, turnAccum:0, turnResume: s.paused?null:Date.now() });
+      if(navigator.vibrate){ try{ navigator.vibrate(12); }catch(e){} }
+    },
+    togglePause: function(){
+      var s = this.state;
+      if(s.phase!=='playing' || !s.timerEnabled) return;
+      if(s.paused) this.set({ paused:false, turnResume:Date.now() });
+      else this.set({ paused:true, turnAccum:this.curTurnMs(), turnResume:null });
+    },
 
-  function updateCoin(){
-    el.coin.classList.toggle("mini", !S.timerEnabled);
-    var rolling = S.phase==="rolling";
-    el.coin.classList.toggle("hidden", rolling);
-    el.coin.classList.toggle("paused", S.paused);
-    if(S.active!=null && S.players[S.active]){
-      var hex = colorHex(S.players[S.active].color);
-      document.documentElement.style.setProperty("--active", hex);
-      // tint the glass coin with the active player's colour so the whole circle
-      // — not just the thin ring — reads clearly as that player's colour
-      var cr=parseInt(hex.slice(1,3),16), cg=parseInt(hex.slice(3,5),16), cb=parseInt(hex.slice(5,7),16);
-      var mix=function(c,d){ return Math.round(c*0.34 + d*0.66); };
-      el.coin.style.background = "rgba("+mix(cr,16)+","+mix(cg,18)+","+mix(cb,22)+",0.74)";
-    } else {
-      document.documentElement.style.setProperty("--active", "#555");
-      el.coin.style.background = "";
-    }
-    var ct = (S.phase==="playing" && S.active!=null) ? currentTurn() : 0;
-    setStacks(el.turnStacks, ct);
-    var tot = (S.active!=null ? (S.totals[S.active]||0) : 0) + ct;
-    setStacks(el.totalStacks, tot);
-    updatePointer(false);
-  }
-  setInterval(function(){ if(S.phase==="playing") updateCoin(); }, CFG.tickMs);
-  // Track the visible viewport height so the layout (and the centred coin) fit
-  // the area not covered by the browser bar, and recompute on any change.
-  function setAppHeight(){
-    var vv = window.visualViewport;
-    if(vv) document.documentElement.style.setProperty("--app-h", vv.height + "px");
-  }
-  function onViewportChange(){ setAppHeight(); computeSeatOrder(); applyTileOrientation(); updatePointer(true); }
-  window.addEventListener("resize", onViewportChange);
-  if(window.visualViewport){
-    window.visualViewport.addEventListener("resize", onViewportChange);
-    window.visualViewport.addEventListener("scroll", onViewportChange);
-  }
-  setAppHeight();
+    // ---------- life / elimination ----------
+    isDead: function(i){ return this.state.elims.some(function(e){ return e.i===i; }); },
+    changeLife: function(i, d){
+      var s = this.state;
+      if(s.phase!=='playing') return;
+      var life = s.life.slice(); life[i] += d;
+      var lifeMin = s.lifeMin.slice();
+      var lifeMax = s.lifeMax.slice(); lifeMax[i] = Math.max(lifeMax[i], life[i]);
+      var cmd = s.cmd;
+      if(s.dealing>=0 && s.dealing!==i){
+        cmd = s.cmd.map(function(r){ return r.slice(); });
+        cmd[s.dealing][i] = Math.max(0, cmd[s.dealing][i] - d);
+      }
+      var deltas = s.deltas.slice(), now = Date.now();
+      var prevSum = deltas[i] && deltas[i].until > now ? deltas[i].sum : 0;
+      deltas[i] = { sum: prevSum + d, until: now + s.deltaFadeMs };
+      var elims = s.elims.slice();
+      var lethalCd = -1;
+      for(var k=0;k<cmd.length;k++){ if(k!==i && cmd[k][i]>=21){ lethalCd = k; break; } }
+      if(lethalCd>=0 && life[i]>0) life[i] = 0;
+      lifeMin[i] = Math.min(lifeMin[i], life[i]);
+      if(!this.isDead(i)){
+        if(lethalCd>=0) elims.push({ i:i, by:lethalCd, how:'cmd', order:elims.length });
+        else if(life[i]<=0) elims.push({ i:i, by: s.dealing>=0?s.dealing:-1, how:'life', order:elims.length });
+      }
+      this.set({ life:life, lifeMin:lifeMin, lifeMax:lifeMax, cmd:cmd, deltas:deltas, elims:elims });
+      if(navigator.vibrate){ try{ navigator.vibrate(7); }catch(e){} }
+    },
 
-  function bankCurrent(){
-    if(S.active!=null) S.totals[S.active] = (S.totals[S.active]||0) + currentTurn();
-  }
-  function passTurn(){
-    if(S.phase!=="playing" || S.active==null) return;
-    bankCurrent();
-    S.active = nextIndex(S.active);
-    S.turnAccum = 0;
-    S.segStart = S.paused ? null : Date.now();
-    updateTiles(); updateCoin(); save();
-  }
-  function togglePause(){
-    if(S.phase!=="playing") return;
-    if(!S.paused){
-      if(S.segStart!=null){ S.turnAccum += Date.now()-S.segStart; S.segStart=null; }
-      S.paused = true;
-    } else {
-      S.paused = false;
-      S.segStart = Date.now();
-    }
-    updateTiles(); updateCoin(); save();
-  }
+    // ---------- box pointer ----------
+    boxDown: function(e, i, rot){
+      var s = this.state;
+      if(s.phase==='rolling'){ this.skipRoll(); return; }
+      if(s.settingsOpen || s.phase!=='playing') return;
+      var r = e.currentTarget.getBoundingClientRect();
+      var rx = e.clientX - r.left, ry = e.clientY - r.top, dir;
+      if(rot===90) dir = ry < r.height/2 ? -1 : 1;
+      else if(rot===-90) dir = ry < r.height/2 ? 1 : -1;
+      else if(rot===0) dir = rx < r.width/2 ? -1 : 1;
+      else dir = rx < r.width/2 ? 1 : -1;
+      this.press = { i:i, dir:dir, x:e.clientX, y:e.clientY, moved:false, repeating:false, timer:null, rpt:null };
+      var self = this;
+      this.press.timer = setTimeout(function(){ self.startRepeat(); }, 450);
+    },
+    startRepeat: function(){
+      var self = this;
+      if(!this.press || this.press.moved) return;
+      this.press.repeating = true;
+      var delay = 300;
+      var go = function(){ if(!self.press) return; self.changeLife(self.press.i, self.press.dir); delay = Math.max(70, delay*0.86); self.press.rpt = setTimeout(go, delay); };
+      go();
+    },
+    boxMove: function(e){ if(!this.press) return; if(Math.hypot(e.clientX-this.press.x, e.clientY-this.press.y) > 14){ this.press.moved = true; this.clearPress(); } },
+    boxUp: function(){
+      var s = this.state;
+      if(this.press && !this.press.moved && !this.press.repeating){
+        if(s.dealing === this.press.i) this.set({ dealing:-1 });
+        else this.changeLife(this.press.i, this.press.dir);
+      }
+      this.clearPress();
+    },
+    clearPress: function(){ if(this.press){ clearTimeout(this.press.timer); clearTimeout(this.press.rpt); } this.press = null; },
 
-  // coin gestures: tap = pass turn, double tap = pause, hold 1s = open settings.
-  // Guard against Android's edge-swipe (back/home) bleeding a touch through: if
-  // the finger moves like a swipe before release, the tap/hold is ignored so the
-  // active player can't be changed by a navigation gesture passing over the bar.
-  var pendingPass = null;
-  var coinHoldTimer = null, coinHeld = false, coinSwiped = false, coinOX = 0, coinOY = 0;
-  function coinMoveCheck(e){
-    if(Math.hypot(e.clientX-coinOX, e.clientY-coinOY) > CFG.edgeGuardMoveTol){
-      coinSwiped = true;
-      coinHoldCancel();
-    }
-  }
-  el.coin.addEventListener("pointerdown", function(e){
-    coinHeld = false; coinSwiped = false; coinOX = e.clientX; coinOY = e.clientY;
-    coinHoldTimer = setTimeout(function(){
-      coinHeld = true;
-      if(pendingPass){ clearTimeout(pendingPass); pendingPass = null; }
-      if(navigator.vibrate){ try{ navigator.vibrate(18); }catch(_){} }
-      openSheet();
-    }, 1000);
-  });
-  el.coin.addEventListener("pointermove", coinMoveCheck);
-  function coinHoldCancel(){ if(coinHoldTimer){ clearTimeout(coinHoldTimer); coinHoldTimer = null; } }
-  el.coin.addEventListener("pointerup", function(e){
-    coinHoldCancel();
-    if(coinHeld){ coinHeld = false; return; }   // the hold already opened settings
-    if(coinSwiped){ coinSwiped = false; return; }   // looked like a swipe: ignore, no pass/pause
-    if(!S.timerEnabled) return;   // mini circle: no pass/pause, only the long-press opens settings
-    if(S.phase!=="playing") return;
-    if(pendingPass){ clearTimeout(pendingPass); pendingPass=null; togglePause(); }
-    else { pendingPass = setTimeout(function(){ pendingPass=null; passTurn(); }, CFG.dblMs); }
-  });
-  el.coin.addEventListener("pointercancel", coinHoldCancel);
-  el.coin.addEventListener("pointerleave", coinHoldCancel);
+    // ---------- bar pointer ----------
+    barDown: function(e){
+      var self = this;
+      this.bar = { x:e.clientX, y:e.clientY, moved:false, holdFired:false, hold:null };
+      this.bar.hold = setTimeout(function(){ if(self.bar && !self.bar.moved){ self.bar.holdFired = true; self.set({ settingsOpen:true }); } }, 550);
+    },
+    barMove: function(e){ if(!this.bar) return; if(Math.hypot(e.clientX-this.bar.x, e.clientY-this.bar.y) > 14){ this.bar.moved = true; clearTimeout(this.bar.hold); } },
+    barUp: function(){
+      var self = this;
+      if(!this.bar) return;
+      clearTimeout(this.bar.hold);
+      var b = this.bar; this.bar = null;
+      if(b.holdFired || b.moved) return;
+      if(this.state.phase==='rolling'){ this.skipRoll(); return; }
+      var now = Date.now();
+      if(this.lastTap && now-this.lastTap < 300){ this.lastTap = 0; clearTimeout(this.passTimer); this.togglePause(); }
+      else { this.lastTap = now; this.passTimer = setTimeout(function(){ self.pass(); }, 300); }
+    },
+    barCancel: function(){ if(this.bar) clearTimeout(this.bar.hold); this.bar = null; },
 
-  // ---- who-goes-first roll --------------------------------------------
-  var rollTimers = [];
-  var rollResult = { first:0, second:0 };
-  function clearRollTimers(){ rollTimers.forEach(clearTimeout); rollTimers = []; }
+    // ---------- colour helpers ----------
+    rgba: function(hex, a){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; },
+    lighten: function(hex){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); var f=function(c){return Math.round(c+(255-c)*0.45);}; return 'rgb('+f((n>>16)&255)+','+f((n>>8)&255)+','+f(n&255)+')'; },
+    isLight: function(hex){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))>150; },
+    mmss: function(ms){ var t=Math.max(0,Math.floor(ms/1000)); return [String(Math.floor(t/60)).padStart(2,'0'), String(t%60).padStart(2,'0')]; },
+    clk: function(ms){ var p=this.mmss(ms); return p[0]+':'+p[1]; },
 
-  function startRoll(){
-    S.phase = "rolling"; S.active = null;
-    el.board.classList.add("rolling");
-    el.board.removeAttribute("data-first-player");
-    el.board.removeAttribute("data-second-player");
-    for(var i=0;i<S.count;i++){
-      tileEls[i].tile.classList.remove("spot","first","flash2");
-    }
-    updateCoin();
-    el.hint.classList.add("show");
-    el.skip.classList.add("show");
+    // ---------- layout ----------
+    layout: function(count){
+      switch(count){
+        case 2: return { top:[[{i:0,rot:180}]], bottom:[[{i:1,rot:0}]] };
+        case 3: return { top:[[{i:0,rot:90},{i:1,rot:-90}]], bottom:[[{i:2,rot:0}]] };
+        case 4: return { top:[[{i:0,rot:90},{i:1,rot:-90}]], bottom:[[{i:2,rot:90},{i:3,rot:-90}]] };
+        case 5: return { top:[[{i:0,rot:90},{i:1,rot:-90}]], bottom:[[{i:2,rot:90},{i:3,rot:-90}],[{i:4,rot:0}]] };
+        default:return { top:[[{i:0,rot:90},{i:1,rot:-90}]], bottom:[[{i:2,rot:90},{i:3,rot:-90}],[{i:4,rot:90},{i:5,rot:-90}]] };
+      }
+    },
 
-    var first = pickFirst();
-    var second = nextIndex(first);
-    rollResult = { first:first, second:second };
+    makeBox: function(seat, block, w, h, colIndex, colCount){
+      var s = this.state, i = seat.i, rot = seat.rot, p = s.players[i];
+      var glow = (s.glowStrength!=null?s.glowStrength:60)/100;
+      var baseColor = p.color, black = false;
+      if(s.dealing>=0){ if(s.dealing===i) black=true; else baseColor = s.players[s.dealing].color; }
+      var dead = this.isDead(i);
+      var gradDir = block==='top' ? '160deg' : '20deg';
+      var bleed = (s.colorBleed!=null?s.colorBleed:100)/100;
+      var grad = black ? gradDir+', rgba(0,0,0,.92), rgba(0,0,0,.92)'
+        : gradDir+', '+this.rgba(baseColor,(dead?0.07:0.20)*bleed)+', '+this.rgba(baseColor,(dead?0.02:0.06)*bleed)+' 65%';
+      var active = s.timerEnabled && s.phase==='playing' && s.active===i && s.dealing<0;
+      var rolling = s.phase==='rolling' && s.rollIdx===i;
+      var radius = BOX_RADIUS;
+      var numColor = black ? '#fff' : dead ? 'rgba(255,255,255,.35)' : this.lighten(baseColor);
+      var outer = block==='top' ? 'top' : 'bottom';
+      var inner = block==='top' ? 'bottom' : 'top';
+      var scale = s.lifeScale/100;
+      var cs = (s.cdScale!=null?s.cdScale:140)/100;
+      var showCd = p.cd && s.dealing<0;
+      var numSize = Math.round(Math.min(116*scale, this._numCap||1e9));
+      var nOpp = Math.max(1, s.count-1);
+      var margin = 8, edgeSafety = 4, MIN_OK = 22;
+      var digits = Math.max(2, String(Math.abs(s.life[i])).length);
+      var halfY = numSize*0.58;
+      var halfX = digits*0.32*numSize;
+      var upright = (rot===0 || rot===180);
+      var roomOn = function(thickness, half){ return Math.max(0, thickness/2 - half - margin - edgeSafety); };
+      var roomScreenY = roomOn(h, upright?halfY:halfX);
+      var roomScreenX = roomOn(w, upright?halfX:halfY);
+      var primaryIsY = upright;
+      var roomPrimary = primaryIsY ? roomScreenY : roomScreenX;
+      var roomOther = primaryIsY ? roomScreenX : roomScreenY;
+      var useFallback = roomPrimary < MIN_OK && roomOther > roomPrimary;
+      var offsetOnY = useFallback ? !primaryIsY : primaryIsY;
+      var halfForOffset = offsetOnY ? (upright?halfY:halfX) : (upright?halfX:halfY);
+      var thicknessForOffset = offsetOnY ? h : w;
+      var extendOnX = offsetOnY;
+      var rowLayout = upright ? extendOnX : !extendOnX;
+      var reqChip = 27*cs, padEach = 4*cs, gapEach = 4*cs;
+      var effCs = cs;
+      var finalBadge = 27*effCs;
+      var halfT = thicknessForOffset/2;
+      var gapStart = halfForOffset + margin, gapEnd = Math.max(gapStart, halfT - edgeSafety);
+      var rawInset = halfT - (gapStart+gapEnd)/2;
+      var inset = Math.min(Math.max(rawInset, edgeSafety+finalBadge/2), thicknessForOffset - edgeSafety - finalBadge/2);
+      var cdPos = '';
+      if(showCd){
+        var cx, cy;
+        if(offsetOnY){
+          cx = w/2;
+          var edgeIsTop = (useFallback?inner:outer)==='top';
+          cy = edgeIsTop ? inset : h - inset;
+        } else {
+          cy = h/2;
+          var edgeIsLeft;
+          if(useFallback) edgeIsLeft = colCount>1 && colIndex >= colCount/2;
+          else edgeIsLeft = colCount>1 && colIndex===0;
+          cx = edgeIsLeft ? inset : w - inset;
+        }
+        cdPos = 'left:'+cx+'px;top:'+cy+'px;transform:translate(-50%,-50%) rotate('+rot+'deg)';
+      }
+      var gp = this._gap || 6;
+      var chipPos = inner+':'+gp+'px;left:'+(gp*2)+'px;transform:rotate('+rot+'deg)';
+      var dm = gp*2 + 16;
+      var dCx = colCount>1 ? (colIndex===0 ? w-dm : dm) : w/2;
+      var dCy = inner==='top' ? dm : h-dm;
+      var deltaPos = 'left:'+Math.round(dCx)+'px;top:'+Math.round(dCy)+'px;transform:translate(-50%,-50%) rotate('+rot+'deg)';
+      var d = s.deltas[i];
+      var opps = []; for(var o=0;o<s.count;o++) if(o!==i) opps.push(o);
+      var self = this;
+      return {
+        i:i, rot:rot, life:s.life[i],
+        grad:grad, radius:radius,
+        borderC: rolling ? 'rgba(255,255,255,.85)' : active ? this.rgba(baseColor,0.6) : black ? 'rgba(255,255,255,.3)' : this.rgba(baseColor,0.35),
+        spin: active, showNumber: !black,
+        numSize: numSize, numColor: numColor,
+        numShadow: black||dead ? 'none' : '0 0 42px '+this.rgba(baseColor,0.45*glow),
+        chipPos:chipPos, cdPos:cdPos, deltaPos:deltaPos,
+        delta: d && d.until>Date.now() ? (d.sum>0?'+'+d.sum:String(d.sum)) : null,
+        dead: dead && !(d && d.until>Date.now()),
+        isDealer: black,
+        cdShow: showCd,
+        cdFlexDir: rowLayout ? 'row' : 'column',
+        cdGap: Math.round(4*effCs), cdPad: Math.round(4*effCs),
+        cdChipSize: Math.round(19*effCs), cdChipFont: Math.round(11*effCs), cdChipPadX: Math.round(5*effCs),
+        cdChips: opps.map(function(o){
+          var val = s.cmd[i][o], lethal = val>=21;
+          return { bg: lethal?'#000':s.players[o].color, fg: lethal?'#fff':(self.isLight(s.players[o].color)?'#15130c':'#fff'), border: lethal?'1px solid rgba(255,255,255,.4)':'none', val: lethal?'☠':val };
+        })
+      };
+    },
 
-    if(reduceMotion){
-      finishRoll(first, second);
-      return;
-    }
-    var order = directionOrder();
-    var startPos = 0;
-    var dist = (order.indexOf(first) - startPos + S.count) % S.count;
-    var totalSteps = S.count*2 + dist;
-    var k = 0, prev = null, acc = 0;
-    function step(){
-      if(prev!=null) tileEls[prev].tile.classList.remove("spot");
-      var idx = order[(startPos+k)%S.count];
-      tileEls[idx].tile.classList.add("spot");
-      prev = idx;
-      if(navigator.vibrate){ try{ navigator.vibrate(7); }catch(_){} }
-      if(k>=totalSteps){ finishRoll(first, second); return; }
-      var frac = k/totalSteps;
-      var delay = Math.round(CFG.repMin + (300-CFG.repMin)*frac*frac) + 30;
-      k++;
-      var tmr = setTimeout(step, delay);
-      rollTimers.push(tmr);
-    }
-    step();
-  }
+    // ---------- roster / names ----------
+    orderedRoster: function(){
+      return this.state.roster.slice().sort(function(a,b){
+        if(a.name==='Philip' && b.name!=='Philip') return -1;
+        if(b.name==='Philip' && a.name!=='Philip') return 1;
+        return (b.used||0)-(a.used||0);
+      });
+    },
+    applyName: function(i, name){
+      var s = this.state;
+      var roster = s.roster.map(function(r){ return Object.assign({},r); });
+      var entry = roster.find(function(r){ return r.name===name; });
+      var color = entry && entry.color ? entry.color : s.players[i].color;
+      if(entry) entry.used = Date.now();
+      var players = s.players.map(function(q,j){ return j===i ? Object.assign({},q,{name:name,color:color}) : q; });
+      this.set({ players:players, roster:roster, addingFor:-1, newName:'' });
+    },
+    setPlayerColor: function(i, color){
+      var s = this.state;
+      var players = s.players.map(function(q,j){ return j===i ? Object.assign({},q,{color:color}) : q; });
+      var roster = s.roster.map(function(r){ return r.name===s.players[i].name ? Object.assign({},r,{color:color}) : r; });
+      this.set({ players:players, roster:roster });
+    },
+    confirmAddName: function(i){
+      var s = this.state;
+      var name = (s.newName||'').trim();
+      if(!name) return;
+      var roster = s.roster.map(function(r){ return Object.assign({},r); });
+      if(!roster.find(function(r){ return r.name===name; })) roster.push({ name:name, color:s.players[i].color, used:Date.now() });
+      var players = s.players.map(function(q,j){ return j===i ? Object.assign({},q,{name:name}) : q; });
+      this.set({ roster:roster, players:players, addingFor:-1, newName:'' });
+    },
 
-  function finishRoll(first, second){
-    clearRollTimers();
-    for(var i=0;i<S.count;i++) tileEls[i].tile.classList.remove("spot");
-    tileEls[first].tile.classList.add("first");
-    el.board.setAttribute("data-first-player", String(first));
-    el.board.setAttribute("data-second-player", String(second));
-    var showSecond = S.count >= 3;   // only flash the second player with 3+ players
+    // ---------- settings ----------
+    setCount: function(n){ var next = this.fresh(n); next.settingsOpen = true; this.state = next; this.save(); this.paint(); },
+    resetAll: function(){ var next = this.fresh(this.state.count); this.state = next; this.save(); this.paint(); if(next.phase==='rolling') this.startRoll(); },
 
-    var revealSecond = function(){
-      if(showSecond) tileEls[second].tile.classList.add("flash2");
-    };
-    var begin = function(){
-      el.board.classList.remove("rolling");
-      tileEls[first].tile.classList.remove("first");
-      tileEls[second].tile.classList.remove("flash2");
-      el.hint.classList.remove("show");
-      el.skip.classList.remove("show");
-      S.active = first;
-      S.phase = "playing";
-      S.paused = false;
-      S.turnAccum = 0;
-      S.segStart = Date.now();
-      updateTiles(); updateCoin(); save();
-    };
+    // ---------- stats ----------
+    ranking: function(){
+      var s = this.state, alive = [], dead = [], self = this;
+      for(var i=0;i<s.count;i++) (this.isDead(i)?dead:alive).push(i);
+      alive.sort(function(a,b){ return s.life[b]-s.life[a]; });
+      dead.sort(function(a,b){ var ea=s.elims.find(function(e){return e.i===a;}), eb=s.elims.find(function(e){return e.i===b;}); return eb.order-ea.order; });
+      return alive.concat(dead);
+    },
+    ord: function(n){ return n===1?'1st':n===2?'2nd':n===3?'3rd':n+'th'; },
+    summaryText: function(){
+      var s = this.state, self = this, rank = this.ranking();
+      var dur = s.endedAt && s.startedAt ? this.clk(s.endedAt-s.startedAt) : '00:00';
+      var out = 'Commander match — '+dur+' total, '+s.count+' players\n';
+      rank.forEach(function(i, r){
+        var e = s.elims.find(function(x){ return x.i===i; });
+        out += self.ord(r+1)+' '+s.players[i].name+' — life '+s.life[i]+
+          (e ? (e.how==='cmd' ? ' (lethal cmd dmg from '+(e.by>=0?s.players[e.by].name:'?')+')' : ' (eliminated)') : '')+
+          ', '+self.clk(s.totals[i])+' on clock\n';
+      });
+      return out;
+    },
+    viewStats: function(){
+      var s = this.state;
+      var totals = s.active>=0 ? s.totals.map(function(v,i){ return i===s.active ? v+App.curTurnMs() : v; }) : s.totals;
+      this.set({ phase:'stats', endedAt:Date.now(), settingsOpen:false, totals:totals, turnAccum:0, turnResume:null });
+    },
+    backToGame: function(){
+      var s = this.state;
+      this.set({ phase:'playing', endedAt:null, turnResume: s.timerEnabled && s.active>=0 && !s.paused ? Date.now() : null });
+    },
 
-    if(reduceMotion){ rollTimers.push(setTimeout(begin, 250)); return; }
-    rollTimers.push(setTimeout(revealSecond, 560));
-    rollTimers.push(setTimeout(begin, 1450));
-  }
+    // ---------- render values ----------
+    renderVals: function(){
+      var s = this.state, self = this;
+      var L = this.layout(s.count);
+      var barVisible = s.timerEnabled && s.phase!=='stats';
+      var tsc = s.timerScale/100;
+      var barHpx = Math.round(96*tsc);
+      var vw = window.innerWidth||384, vh = window.innerHeight||824;
+      var gap = Math.round(Math.max(6, Math.min(12, Math.min(vw,vh)*0.016)));
+      this._gap = gap;
+      var allRows = L.top.concat(L.bottom);
+      var childCount = allRows.length + (barVisible?1:0);
+      var availH = Math.max(160, vh - 2*gap - (childCount-1)*gap - (barVisible?barHpx:0));
+      var stdCols = s.count===2 ? 1 : 2;
+      var stdW = (vw - 2*gap - (stdCols-1)*gap)/stdCols;
+      var soloSc = (s.soloScale!=null?s.soloScale:100)/100;
+      var growFor = function(r){ return r.length < stdCols ? soloSc : 1; };
+      var totalGrow = allRows.reduce(function(a,r){ return a+growFor(r); }, 0);
+      var rowH = availH/totalGrow;
+      this._numCap = Math.min(stdW, rowH)*0.7;
+      var fullW = vw - 2*gap;
+      var mkRow = function(r, block){ return r.map(function(seat, idx){ return self.makeBox(seat, block, r.length<stdCols?fullW:stdW, rowH*growFor(r), idx, r.length); }); };
+      var rows = [];
+      L.top.forEach(function(r, ri){ rows.push({ isBar:false, grow:growFor(r), boxes:mkRow(r,'top') }); });
+      if(barVisible) rows.push({ isBar:true, grow:0 });
+      L.bottom.forEach(function(r, ri){ rows.push({ isBar:false, grow:growFor(r), boxes:mkRow(r,'bottom') }); });
 
-  el.skip.addEventListener("click", function(){
-    if(S.phase!=="rolling") return;
-    clearRollTimers();
-    finishRoll(rollResult.first, rollResult.second);
-  });
+      var activeColor = s.active>=0 && s.active<s.count ? s.players[s.active].color : '#3a3f47';
+      var turnMs = s.phase==='playing' && s.active>=0 ? this.curTurnMs() : 0;
+      var bankMs = s.active>=0 ? s.totals[s.active]+turnMs : 0;
+      var t = this.mmss(turnMs), b = this.mmss(bankMs);
 
-  // ---- reset -----------------------------------------------------------
-  // reset life/timer to a fresh, idle board (no active player, no roll yet)
-  function resetIdle(){
-    endAllPress();
-    if(cdMode!=null) exitCdMode();
-    clearRollTimers();
-    S.life = []; S.totals = []; deltaSum = [];
-    for(var i=0;i<S.count;i++){ S.life[i]=S.startingLife; S.totals[i]=0; deltaSum[i]=0; if(fadeTimer[i]) clearTimeout(fadeTimer[i]); }
-    clearCmdMatrix();   // a fresh game clears accumulated commander damage
-    S.active=null; S.paused=false; S.turnAccum=0; S.segStart=null; S.phase="idle";
-    for(var j=0;j<S.count;j++){ if(tileEls[j]){ tileEls[j].delta.classList.remove("show"); } }
-    updateTiles(); updateCoin();
-  }
-  function resetGame(withRoll){
-    resetIdle();
-    if(!S.timerEnabled){
-      // timer disabled: no active player / roll ceremony, just start playing
-      S.active = null; S.phase = "playing"; S.segStart = null;
-      el.board.removeAttribute("data-first-player");
-      el.board.removeAttribute("data-second-player");
-      updateTiles(); updateCoin();
-    } else if(withRoll && !CFG.nosplash){
-      startRoll();
-    } else {
-      S.active = pickFirst();
-      S.phase = "playing";
-      S.segStart = Date.now();
-      el.board.setAttribute("data-first-player", String(S.active));
-      el.board.setAttribute("data-second-player", String(nextIndex(S.active)));
-      updateTiles(); updateCoin();
-    }
-    save();
-  }
+      return {
+        rows: rows,
+        gapPx: gap+'px',
+        timerDisabled: !s.timerEnabled && s.phase!=='stats',
+        boundaryPct: Math.round((L.top.length*rowH + (L.top.length+0.5)*gap)/vh*100),
+        isRolling: s.phase==='rolling',
+        barH: barHpx,
+        barBg: s.paused ? 'rgba(60,16,18,.85)' : 'rgba(16,18,22,.82)',
+        barBorder: s.paused ? 'rgba(255,91,91,.6)' : this.rgba(activeColor,0.5),
+        clockInset: Math.round(66*tsc),
+        clockBig: Math.round(40*tsc), clockMid: Math.round(32*tsc), clockSm: Math.round(19*tsc), clockSm2: Math.round(17*tsc),
+        clockColor: s.paused ? '#ff9d9d' : '#fff',
+        tMM:t[0], tSS:t[1], bMM:b[0], bSS:b[1],
+        paused: s.paused,
+        dotColor: this.rgba(activeColor,0.9)
+      };
+    },
 
-  // ---- settings sheet --------------------------------------------------
-  function openSheet(){ el.overlay.classList.add("show"); el.sheet.classList.add("show"); }
-  function closeSheet(){
-    el.overlay.classList.remove("show"); el.sheet.classList.remove("show"); armResetBtn(false);
-    // a player-count change leaves the board idle (setCount); start the
-    // who-goes-first roll only now, when the menu is closed.
-    if(S.phase==="idle"){ resetGame(true); }
-  }
+    // ---------- painting ----------
+    paint: function(){ this.paintBoard(); this.paintOverlay(); },
 
-  el.overlay.addEventListener("click", closeSheet);
-  el.done.addEventListener("click", closeSheet);
-
-  // count segmented
-  [2,3,4,5,6].forEach(function(n){
-    var b = document.createElement("button");
-    b.textContent = String(n);
-    b.setAttribute("data-testid","count-"+n);
-    b.setAttribute("data-count", String(n));
-    b.addEventListener("click", function(){ setCount(n); });
-    el.countSeg.appendChild(b);
-  });
-  function setCount(n){
-    if(n===S.count){ return; }
-    S.count = n;
-    // grow/shrink players preserving existing
-    var p = S.players.slice(0,n);
-    for(var i=p.length;i<n;i++){ p.push({ name:"Player "+(i+1), color: COLOR_ORDER[i % COLOR_ORDER.length] }); }
-    S.players = p;
-    ensureCmdMatrix();
-    syncSettingsUI();
-    buildBoard();
-    buildPlayerRows();
-    resetIdle();   // show the new board; the re-roll happens when the menu closes
-    save();
-  }
-
-  // direction segmented
-  el.dirSeg.querySelectorAll("button").forEach(function(b){
-    b.addEventListener("click", function(){
-      S.direction = b.getAttribute("data-dir");
-      syncSettingsUI();
-      if(S.phase==="playing"){ S.active = S.active; } // direction affects future passes
-      save();
-    });
-  });
-
-  // turn timer on/off: disabling turns the bar into a small inert circle with
-  // no time display and no active-player tracking; life editing is unaffected.
-  el.timerSeg.querySelectorAll("button").forEach(function(b){
-    b.addEventListener("click", function(){
-      setTimerEnabled(b.getAttribute("data-timer")==="on");
-    });
-  });
-  function setTimerEnabled(enabled){
-    if(enabled === S.timerEnabled) return;
-    S.timerEnabled = enabled;
-    if(!enabled){
-      clearRollTimers();
-      el.board.classList.remove("rolling");
-      el.hint.classList.remove("show");
-      el.skip.classList.remove("show");
-      S.active = null; S.paused = false; S.turnAccum = 0; S.segStart = null;
-      S.phase = "playing";
-    } else {
-      // re-enabling mid-game: establish an active player without resetting
-      // life totals or running the roll-for-first ceremony
-      S.active = pickFirst();
-      S.paused = false;
-      S.turnAccum = 0;
-      S.segStart = Date.now();
-      S.phase = "playing";
-    }
-    syncSettingsUI();
-    updateTiles(); updateCoin(); save();
-  }
-
-  // starting life
-  el.lifeDec.addEventListener("click", function(){ S.startingLife = Math.max(1, S.startingLife-1); syncSettingsUI(); save(); });
-  el.lifeInc.addEventListener("click", function(){ S.startingLife = S.startingLife+1; syncSettingsUI(); save(); });
-
-  // delta fade time (seconds); 1s..60s
-  function stepDeltaFade(deltaSec){
-    var sec = Math.round(S.deltaFadeMs/1000) + deltaSec;
-    sec = Math.max(1, Math.min(60, sec));
-    S.deltaFadeMs = sec*1000;
-    syncSettingsUI(); save();
-  }
-  el.deltaDec.addEventListener("click", function(){ stepDeltaFade(-1); });
-  el.deltaInc.addEventListener("click", function(){ stepDeltaFade(+1); });
-
-  // 5-player 5th-panel height (10..50%, step 5%); re-applies live
-  function stepPanel5(deltaPct){
-    var pct = Math.round(S.panel5Share*100) + deltaPct;
-    pct = Math.max(10, Math.min(50, pct));
-    S.panel5Share = pct/100;
-    if(S.count===5){ applyHalfFlex(); applyTileOrientation(); }
-    syncSettingsUI(); save();
-  }
-  el.panel5Dec.addEventListener("click", function(){ stepPanel5(-5); });
-  el.panel5Inc.addEventListener("click", function(){ stepPanel5(+5); });
-
-  // life-number font scale (50..200%, step 10%); re-sizes numbers live
-  function stepLifeScale(deltaPct){
-    var pct = Math.round(S.lifeScale*100) + deltaPct;
-    pct = Math.max(50, Math.min(200, pct));
-    S.lifeScale = pct/100;
-    applyTileOrientation();
-    syncSettingsUI(); save();
-  }
-  el.lifeScaleDec.addEventListener("click", function(){ stepLifeScale(-10); });
-  el.lifeScaleInc.addEventListener("click", function(){ stepLifeScale(+10); });
-
-  // timer font scale (50..200%, step 10%); driven by the --time-scale CSS var
-  function stepTimerScale(deltaPct){
-    var pct = Math.round(S.timerScale*100) + deltaPct;
-    pct = Math.max(50, Math.min(200, pct));
-    S.timerScale = pct/100;
-    document.documentElement.style.setProperty("--time-scale", String(S.timerScale));
-    syncSettingsUI(); save();
-  }
-  el.timerScaleDec.addEventListener("click", function(){ stepTimerScale(-10); });
-  el.timerScaleInc.addEventListener("click", function(){ stepTimerScale(+10); });
-
-  function buildPlayerRows(){
-    el.playerList.innerHTML = "";
-    for(var i=0;i<S.count;i++){
-      (function(i){
-        var row = document.createElement("div"); row.className="prow";
-        var head = document.createElement("div"); head.className="head";
-
-        var sw = document.createElement("button");
-        sw.className="swatch"; sw.setAttribute("data-testid","player-"+i+"-color");
-        sw.style.background = colorHex(S.players[i].color);
-        sw.setAttribute("aria-label","Change Player "+(i+1)+" colour");
-
-        var name = document.createElement("input");
-        name.className="name"; name.type="text"; name.value=S.players[i].name;
-        name.setAttribute("data-testid","player-"+i+"-name");
-        name.addEventListener("input", function(){
-          S.players[i].name = name.value || ("Player "+(i+1));
-          if(tileEls[i]){
-            tileEls[i].dec.setAttribute("aria-label","Decrease "+S.players[i].name+" life");
-            tileEls[i].inc.setAttribute("aria-label","Increase "+S.players[i].name+" life");
-          }
-          save();
+    paintBoard: function(){
+      var s = this.state, V = this.renderVals();
+      var board = document.getElementById('board');
+      board.style.cssText = 'position:fixed;inset:0;background:#060709;display:flex;flex-direction:column;gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
+      if(s.phase==='stats'){ board.innerHTML=''; return; }
+      var html = '';
+      V.rows.forEach(function(row){
+        if(row.isBar){ html += App.barHTML(V); return; }
+        html += '<div style="display:flex;gap:'+V.gapPx+';justify-content:center;min-height:0;flex-grow:'+row.grow+';flex-basis:0;position:relative">';
+        row.boxes.forEach(function(box){ html += App.boxHTML(box); });
+        html += '</div>';
+      });
+      if(V.timerDisabled){
+        html += '<div style="position:absolute;left:50%;top:'+V.boundaryPct+'%;transform:translate(-50%,-50%);z-index:20">'
+          + '<div data-act="openSettings" style="width:40px;height:40px;border-radius:50%;background:rgba(10,11,14,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4)">≡</div></div>';
+      }
+      board.innerHTML = html;
+      this.wireBoard();
+    },
+    boxHTML: function(box){
+      var h = '<div data-box="'+box.i+'" data-rot="'+box.rot+'" style="flex:1 1 0%;position:relative;min-width:0;border-radius:'+box.radius+'px;background:linear-gradient('+box.grad+'),#0b0c0f;border:1px solid '+box.borderC+';overflow:hidden;touch-action:none">';
+      if(box.spin){
+        h += '<div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:'+box.radius+'px">'
+          + '<div style="position:absolute;left:50%;top:50%;width:230%;aspect-ratio:1;margin-left:-115%;margin-top:-115%;background:conic-gradient(#ff6d6d,#ffd45e,#69e29a,#7db8ff,#c792ff,#ff6d6d);animation:obspin 3.2s linear infinite"></div>'
+          + '<div style="position:absolute;inset:3px;border-radius:'+box.radius+'px;background:linear-gradient('+box.grad+'),#0b0c0f"></div></div>';
+      }
+      if(box.showNumber){
+        h += '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate('+box.rot+'deg);font-size:'+box.numSize+'px;font-weight:800;color:'+box.numColor+';text-shadow:'+box.numShadow+';line-height:1;pointer-events:none">'+box.life+'</div>';
+      }
+      if(box.delta){
+        h += '<div style="position:absolute;pointer-events:none;background:rgba(10,11,14,.72);border:1px solid rgba(255,255,255,.16);border-radius:999px;padding:3px 11px;font-size:15px;font-weight:700;color:#fff;'+box.deltaPos+'">'+box.delta+'</div>';
+      }
+      if(box.cdShow){
+        h += '<div data-cd="'+box.i+'" style="position:absolute;display:flex;flex-direction:'+box.cdFlexDir+';gap:'+box.cdGap+'px;background:rgba(0,0,0,.5);border-radius:999px;padding:'+box.cdPad+'px;border:1px solid rgba(255,255,255,.1);'+box.cdPos+'">';
+        box.cdChips.forEach(function(chip){
+          h += '<span style="min-width:'+box.cdChipSize+'px;height:'+box.cdChipSize+'px;border-radius:999px;background:'+chip.bg+';color:'+chip.fg+';border:'+chip.border+';font-size:'+box.cdChipFont+'px;font-weight:800;display:inline-flex;align-items:center;justify-content:center;padding:0 '+box.cdChipPadX+'px">'+chip.val+'</span>';
         });
+        h += '</div>';
+      }
+      if(box.isDealer){
+        h += '<div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%) rotate('+box.rot+'deg);pointer-events:none;text-align:center">'
+          + '<div style="font-size:15px;font-weight:700;color:#fff;letter-spacing:.08em">⚔ DEALING</div>'
+          + '<div style="font-size:11px;font-weight:600;color:rgba(255,255,255,.55);letter-spacing:.14em;margin-top:6px">TAP TO EXIT</div></div>';
+      }
+      if(box.dead){
+        h += '<div style="position:absolute;pointer-events:none;font-size:15px;color:rgba(255,255,255,.5);'+box.chipPos+'">☠</div>';
+      }
+      h += '</div>';
+      return h;
+    },
+    barHTML: function(V){
+      var clockStack = '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1;pointer-events:none">'
+        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockBig+'px;font-weight:800;color:'+V.clockColor+'">'+V.tMM+'</span><span style="font-size:'+V.clockMid+'px;font-weight:800;color:rgba(255,255,255,.55)">'+V.tSS+'</span></div>'
+        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockSm+'px;font-weight:700;color:rgba(255,255,255,.45)">'+V.bMM+'</span><span style="font-size:'+V.clockSm2+'px;font-weight:700;color:rgba(255,255,255,.38)">'+V.bSS+'</span></div></div>';
+      var h = '<div id="bar" style="flex:none;height:'+V.barH+'px;border-radius:20px;background:'+V.barBg+';border:1px solid '+V.barBorder+';position:relative;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);touch-action:none">';
+      h += '<div style="position:absolute;left:'+V.clockInset+'px;top:50%;transform:translate(-50%,-50%) rotate(90deg)">'+clockStack+'</div>';
+      h += '<div style="position:absolute;right:'+V.clockInset+'px;top:50%;transform:translate(50%,-50%) rotate(-90deg)">'+clockStack+'</div>';
+      if(V.paused) h += '<div style="font-size:13px;font-weight:700;letter-spacing:.22em;color:#ff7a7a;pointer-events:none;animation:obpulse 1.6s ease infinite">PAUSED</div>';
+      else h += '<div style="width:8px;height:8px;border-radius:50%;background:'+V.dotColor+';box-shadow:0 0 14px '+V.dotColor+';pointer-events:none"></div>';
+      if(V.isRolling) h += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:rgba(6,7,9,.75);pointer-events:none"><div style="font-size:12px;font-weight:700;letter-spacing:.24em;color:rgba(255,255,255,.75)">ROLLING… TAP TO SKIP</div></div>';
+      h += '</div>';
+      return h;
+    },
+    wireBoard: function(){
+      var board = document.getElementById('board');
+      board.querySelectorAll('[data-box]').forEach(function(el){
+        var i = +el.getAttribute('data-box'), rot = +el.getAttribute('data-rot');
+        el.addEventListener('pointerdown', function(e){ App.boxDown(e, i, rot); });
+      });
+      board.querySelectorAll('[data-cd]').forEach(function(el){
+        var i = +el.getAttribute('data-cd');
+        el.addEventListener('pointerdown', function(e){ e.stopPropagation(); if(App.state.phase==='playing') App.set({ dealing:i }); });
+        el.addEventListener('pointerup', function(e){ e.stopPropagation(); });
+      });
+      var bar = document.getElementById('bar');
+      if(bar){
+        bar.addEventListener('pointerdown', function(e){ App.barDown(e); });
+      }
+      var menu = board.querySelector('[data-act="openSettings"]');
+      if(menu) menu.addEventListener('click', function(){ App.set({ settingsOpen:true }); });
+    },
 
-        var picker = document.createElement("div"); picker.className="picker";
-        picker.setAttribute("data-testid","player-"+i+"-picker");
-        COLOR_ORDER.forEach(function(cn){
-          var opt=document.createElement("button");
-          opt.className="opt"+(S.players[i].color===cn?" sel":"");
-          opt.style.background=PALETTE[cn];
-          opt.setAttribute("data-testid","player-"+i+"-swatch-"+cn);
-          opt.setAttribute("aria-label",cn);
-          opt.addEventListener("click", function(){
-            S.players[i].color = cn;
-            sw.style.background = PALETTE[cn];
-            applyTileColor(i);
-            if(S.active===i) updateCoin();
-            renderCmdBoxes();
-            picker.querySelectorAll(".opt").forEach(function(o){ o.classList.remove("sel"); });
-            opt.classList.add("sel");
-            save();
+    // ---------- overlay (settings / stats) ----------
+    paintOverlay: function(){
+      var s = this.state, ov = document.getElementById('overlay');
+      if(s.settingsOpen){ ov.innerHTML = this.settingsHTML(); }
+      else if(s.phase==='stats'){ ov.innerHTML = this.statsHTML(); }
+      else { ov.innerHTML = ''; }
+    },
+    settingsHTML: function(){
+      var s = this.state, self = this;
+      var sheetOp = s.advOpen ? Math.max(0.1, 1-(s.advOpacity!=null?s.advOpacity:50)/100) : 1;
+      var scrimA = s.advOpen ? (0.55*Math.max(0.1,1-(s.advOpacity!=null?s.advOpacity:50)/100)).toFixed(3) : '0.55';
+      var ordered = this.orderedRoster();
+      var L2 = this.layout(s.count);
+      var playerLayout = L2.top.concat(L2.bottom);
+
+      var playerCards = '';
+      playerLayout.forEach(function(row){
+        playerCards += '<div style="display:flex;gap:8px">';
+        row.forEach(function(seat){
+          var i = seat.i, p = s.players[i];
+          var cdBg = p.cd ? self.rgba(p.color,0.25) : 'rgba(255,255,255,.05)';
+          var cdBorder = p.cd ? self.rgba(p.color,0.7) : 'rgba(255,255,255,.14)';
+          var cdFg = p.cd ? '#fff' : 'rgba(255,255,255,.4)';
+          playerCards += '<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.08);border-radius:14px;padding:10px">'
+            + '<div style="display:flex;align-items:center;gap:8px">'
+            + '<button data-act="toggleSw" data-i="'+i+'" style="width:28px;height:28px;border-radius:9px;border:2px solid rgba(255,255,255,.2);background:'+p.color+';flex:none;padding:0"></button>'
+            + '<select data-act="selName" data-i="'+i+'" style="flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:7px 26px 7px 10px;font-size:13px;color:#fff;font-family:inherit;outline:none">';
+          var found = false;
+          ordered.forEach(function(r){
+            var sel = r.name===p.name ? ' selected' : ''; if(sel) found = true;
+            playerCards += '<option value="'+esc(r.name)+'"'+sel+' style="background:#0e1014;color:#fff">'+esc(r.name)+'</option>';
           });
-          picker.appendChild(opt);
+          if(!found) playerCards += '<option value="'+esc(p.name)+'" selected style="background:#0e1014;color:#fff">'+esc(p.name)+'</option>';
+          playerCards += '<option value="__add__" style="background:#0e1014;color:#fff">＋ Add name…</option>';
+          playerCards += '</select>'
+            + '<button data-act="toggleCd" data-i="'+i+'" style="width:32px;height:28px;border-radius:9px;border:1px solid '+cdBorder+';background:'+cdBg+';color:'+cdFg+';font-size:13px;flex:none">⚔</button>'
+            + '</div>';
+          if(s.addingFor===i){
+            playerCards += '<div style="display:flex;gap:6px">'
+              + '<input data-act="newName" value="'+esc(s.newName)+'" placeholder="New name" style="flex:1;min-width:0;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:7px 10px;font-size:13px;color:#fff;font-family:inherit;outline:none">'
+              + '<button data-act="confirmAdd" data-i="'+i+'" style="padding:0 12px;border-radius:9px;border:0;background:#2d7bff;color:#fff;font-size:13px;font-weight:700;font-family:inherit">Add</button></div>';
+          }
+          if(s.openColorIdx===i){
+            playerCards += '<div style="display:flex;flex-wrap:wrap;gap:6px;align-items:center">';
+            PAL.forEach(function(c){
+              var ring = c.toLowerCase()===p.color.toLowerCase() ? '2px solid #fff' : '2px solid rgba(255,255,255,.12)';
+              playerCards += '<button data-act="pickColor" data-i="'+i+'" data-c="'+c+'" style="width:24px;height:24px;border-radius:50%;border:'+ring+';background:'+c+';padding:0"></button>';
+            });
+            playerCards += '<input data-act="setCustom" data-i="'+i+'" type="color" value="'+p.color+'" style="width:28px;height:24px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:transparent;padding:1px"></div>';
+          }
+          playerCards += '</div>';
         });
+        playerCards += '</div>';
+      });
 
-        // custom colour tool (in addition to the premade swatches)
-        var customWrap = document.createElement("label");
-        customWrap.className = "custom-wrap";
-        customWrap.setAttribute("aria-label","Custom colour");
-        var custom = document.createElement("input");
-        custom.type = "color"; custom.className = "custom";
-        custom.value = colorHex(S.players[i].color);
-        custom.setAttribute("data-testid","player-"+i+"-custom");
-        custom.addEventListener("input", function(){
-          S.players[i].color = custom.value;   // store the hex directly
-          sw.style.background = custom.value;
-          applyTileColor(i);
-          if(S.active===i) updateCoin();
-          renderCmdBoxes();
-          picker.querySelectorAll(".opt").forEach(function(o){ o.classList.remove("sel"); });
-          save();
-        });
-        customWrap.appendChild(custom);
-        picker.appendChild(customWrap);
+      var countOpts = '';
+      [2,3,4,5,6].forEach(function(n){
+        var bg = n===s.count ? 'rgba(45,123,255,.2)' : 'rgba(255,255,255,.04)';
+        var bd = n===s.count ? 'rgba(45,123,255,.7)' : 'rgba(255,255,255,.12)';
+        countOpts += '<button data-act="setCount" data-n="'+n+'" style="flex:1;padding:10px 0;border-radius:12px;border:1px solid '+bd+';background:'+bg+';color:#fff;font-size:16px;font-weight:700;font-family:inherit">'+n+'</button>';
+      });
 
-        // accordion: opening one player's picker collapses any other open picker
-        sw.addEventListener("click", function(){
-          var willOpen = !picker.classList.contains("open");
-          el.playerList.querySelectorAll(".picker.open").forEach(function(pk){ pk.classList.remove("open"); });
-          if(willOpen) picker.classList.add("open");
-        });
+      var slider = function(label, key, min, max, val, suffix){
+        return '<div style="display:flex;flex-direction:column;gap:6px">'
+          + '<div style="display:flex;justify-content:space-between;font-size:14px"><span style="font-weight:600">'+label+'</span><span id="lbl-'+key+'" style="color:rgba(255,255,255,.55)">'+val+suffix+'</span></div>'
+          + '<input data-act="slider" data-key="'+key+'" type="range" min="'+min+'" max="'+max+'" value="'+val+'" style="width:100%"></div>';
+      };
 
-        // commander-damage tracking toggle for this player
-        var cdBtn = document.createElement("button");
-        cdBtn.className = "cdtoggle" + (S.players[i].cd ? " on" : "");
-        cdBtn.type = "button";
-        cdBtn.textContent = "⚔";
-        cdBtn.title = "Track commander damage";
-        cdBtn.setAttribute("aria-label","Toggle commander-damage tracking for "+S.players[i].name);
-        cdBtn.setAttribute("aria-pressed", S.players[i].cd ? "true" : "false");
-        cdBtn.setAttribute("data-testid","player-"+i+"-cd");
-        cdBtn.addEventListener("click", function(){
-          S.players[i].cd = !S.players[i].cd;
-          cdBtn.classList.toggle("on", S.players[i].cd);
-          cdBtn.setAttribute("aria-pressed", S.players[i].cd ? "true" : "false");
-          if(!S.players[i].cd && cdMode===i) exitCdMode();
-          renderCmdBoxes(); applyTileOrientation(); save();
-        });
-
-        head.appendChild(sw); head.appendChild(name); head.appendChild(cdBtn);
-        row.appendChild(head); row.appendChild(picker);
-        el.playerList.appendChild(row);
-      })(i);
-    }
-  }
-
-  // reset with two-tap confirm
-  var resetArmed = false, resetTimer = null;
-  function armResetBtn(on){
-    resetArmed = on;
-    el.reset.classList.toggle("confirm", on);
-    el.reset.textContent = on ? "Tap again to confirm" : "Reset game";
-    el.reset.setAttribute("data-confirm", on ? "true" : "false");
-    if(resetTimer){ clearTimeout(resetTimer); resetTimer=null; }
-    if(on){ resetTimer = setTimeout(function(){ armResetBtn(false); }, 3000); }
-  }
-  el.reset.addEventListener("click", function(){
-    if(!resetArmed){ armResetBtn(true); return; }
-    armResetBtn(false);
-    closeSheet();
-    resetGame(true);
-  });
-
-  function syncSettingsUI(){
-    el.countSeg.querySelectorAll("button").forEach(function(b){
-      b.classList.toggle("on", +b.getAttribute("data-count")===S.count);
-    });
-    el.dirSeg.querySelectorAll("button").forEach(function(b){
-      b.classList.toggle("on", b.getAttribute("data-dir")===S.direction);
-    });
-    el.timerSeg.querySelectorAll("button").forEach(function(b){
-      b.classList.toggle("on", (b.getAttribute("data-timer")==="on")===S.timerEnabled);
-    });
-    el.lifeVal.textContent = String(S.startingLife);
-    el.deltaVal.textContent = Math.round(S.deltaFadeMs/1000) + "s";
-    el.panel5Val.textContent = Math.round(S.panel5Share*100) + "%";
-    el.panel5Row.style.display = (S.count===5) ? "" : "none";
-    el.lifeScaleVal.textContent = Math.round(S.lifeScale*100) + "%";
-    el.timerScaleVal.textContent = Math.round(S.timerScale*100) + "%";
-  }
-
-  // ---- boot ------------------------------------------------------------
-  function boot(){
-    var saved = load();
-    if(saved){
-      S.count = saved.count || 4;
-      S.startingLife = saved.startingLife || 40;
-      S.deltaFadeMs = (typeof saved.deltaFadeMs==="number" && saved.deltaFadeMs>0) ? saved.deltaFadeMs : CFG.fadeMs;
-      S.ptrCycleSec = (typeof saved.ptrCycleSec==="number" && saved.ptrCycleSec>0) ? saved.ptrCycleSec : 6;
-      S.panel5Share = (typeof saved.panel5Share==="number" && saved.panel5Share>=0.1 && saved.panel5Share<=0.5) ? saved.panel5Share : 0.2;
-      S.lifeScale = (typeof saved.lifeScale==="number" && saved.lifeScale>=0.5 && saved.lifeScale<=2) ? saved.lifeScale : 1;
-      S.timerScale = (typeof saved.timerScale==="number" && saved.timerScale>=0.5 && saved.timerScale<=2) ? saved.timerScale : 1;
-      S.timerEnabled = (typeof saved.timerEnabled==="boolean") ? saved.timerEnabled : true;
-      S.direction = saved.direction==="ccw" ? "ccw" : "cw";
-      S.players = (saved.players && saved.players.length)? saved.players : defaultPlayers(S.count);
-      while(S.players.length < S.count) S.players.push({name:"Player "+(S.players.length+1), color:COLOR_ORDER[S.players.length%COLOR_ORDER.length]});
-      S.life = (saved.life && saved.life.length===S.count)? saved.life.slice() : S.players.map(function(){return S.startingLife;});
-      S.totals = (saved.totals && saved.totals.length===S.count)? saved.totals.slice() : S.players.map(function(){return 0;});
-      S.players.forEach(function(p){ p.cd = !!p.cd; });
-      S.cmdDmg = Array.isArray(saved.cmdDmg) ? saved.cmdDmg : [];
-      ensureCmdMatrix();
-      deltaSum = S.players.map(function(){return 0;});
-      if(S.timerEnabled){
-        S.active = (typeof saved.active==="number") ? saved.active : 0;
-        S.paused = !!saved.paused;
-        S.turnAccum = saved.turnAccum || 0;
-        S.segStart = S.paused ? null : Date.now();
-      } else {
-        S.active = null; S.paused = false; S.turnAccum = 0; S.segStart = null;
+      var adv = '';
+      if(s.advOpen){
+        adv = '<div style="display:flex;flex-direction:column;gap:20px">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Starting life</div>'
+          + '<div style="display:flex;align-items:center;gap:10px">'
+          + '<button data-act="lifeDown" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:18px">−</button>'
+          + '<div style="width:44px;text-align:center;font-size:18px;font-weight:800">'+s.startingLife+'</div>'
+          + '<button data-act="lifeUp" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:18px">+</button></div></div>'
+          + slider('Hide change after','deltaFade',1,60,Math.round(s.deltaFadeMs/1000),' s')
+          + slider('Life number size','lifeScale',50,200,s.lifeScale,'%')
+          + slider('Timer size','timerScale',50,200,s.timerScale,'%')
+          + slider('Number glow','glow',0,100,s.glowStrength,'%')
+          + slider('Color bleed','bleed',0,200,s.colorBleed,'%')
+          + slider('Commander damage size','cdScale',70,200,s.cdScale,'%')
+          + slider('Player 5 row height','solo',50,150,s.soloScale,'%')
+          + slider('Menu see-through','advOpacity',0,90,s.advOpacity,'%')
+          + '</div>';
       }
-      S.phase = "playing";
-      syncSettingsUI(); buildBoard(); buildPlayerRows(); updateCoin();
-    } else {
-      S.players = defaultPlayers(S.count);
-      clearCmdMatrix();
-      deltaSum = S.players.map(function(){return 0;});
-      syncSettingsUI(); buildBoard(); buildPlayerRows();
-      resetGame(true);
-    }
-    document.documentElement.style.setProperty("--time-scale", String(S.timerScale));
-  }
 
-  // minimal debug handle (read-only-ish)
-  window.MTG = {
-    version:"1.0.0",
-    get state(){ return JSON.parse(JSON.stringify({count:S.count,direction:S.direction,active:S.active,paused:S.paused,phase:S.phase,life:S.life,totals:S.totals,startingLife:S.startingLife,deltaFadeMs:S.deltaFadeMs,ptrCycleSec:S.ptrCycleSec})); },
-    currentTurnMs:function(){ return currentTurn(); }
+      var resetLabel = s.confirmReset ? 'Tap again to confirm reset' : 'Reset game';
+      var resetBg = s.confirmReset ? 'rgba(255,91,91,.18)' : 'transparent';
+      var resetBorder = s.confirmReset ? 'rgba(255,91,91,.7)' : 'rgba(255,255,255,.15)';
+      var resetFg = s.confirmReset ? '#ff7a7a' : 'rgba(255,255,255,.8)';
+
+      return '<div style="position:fixed;inset:0;z-index:40">'
+        + '<div data-act="closeSettings" id="scrim" style="position:absolute;inset:0;background:rgba(0,0,0,'+scrimA+')"></div>'
+        + '<div id="sheet" style="position:absolute;left:0;right:0;bottom:0;max-height:82%;overflow:auto;opacity:'+sheetOp+';transition:opacity .2s;background:#0e1014;border-radius:22px 22px 0 0;border-top:1px solid rgba(255,255,255,.12);padding:20px 18px 26px;display:flex;flex-direction:column;gap:20px;color:#fff">'
+        + '<div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:0 auto"></div>'
+        + '<div style="display:flex;flex-direction:column;gap:10px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">PLAYERS · SEATING LAYOUT</div><div style="display:flex;flex-direction:column;gap:8px">'+playerCards+'</div></div>'
+        + '<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">PLAYER COUNT</div><div style="display:flex;gap:8px">'+countOpts+'</div></div>'
+        + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Turn timer</div>'
+        + '<button data-act="toggleTimer" style="width:56px;height:32px;border-radius:999px;border:0;background:'+(s.timerEnabled?'#2d7bff':'rgba(255,255,255,.15)')+';position:relative;flex:none"><span style="position:absolute;top:3px;left:'+(s.timerEnabled?27:3)+'px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .18s"></span></button></div>'
+        + '<button data-act="toggleAdv" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span>Advanced settings</span><span style="color:rgba(255,255,255,.5);font-size:12px">'+(s.advOpen?'▲':'▼')+'</span></button>'
+        + adv
+        + '<button data-act="viewStats" style="padding:14px;border-radius:14px;border:1px solid rgba(45,123,255,.5);background:rgba(45,123,255,.12);color:#7db8ff;font-size:15px;font-weight:700;font-family:inherit">View match stats</button>'
+        + '<button data-act="resetGame" style="padding:14px;border-radius:14px;border:1px solid '+resetBorder+';background:'+resetBg+';color:'+resetFg+';font-size:15px;font-weight:700;font-family:inherit">'+resetLabel+'</button>'
+        + '<button data-act="closeSettings" style="padding:14px;border-radius:14px;border:0;background:#2d7bff;color:#fff;font-size:15px;font-weight:700;font-family:inherit">Done</button>'
+        + '</div></div>';
+    },
+    statsHTML: function(){
+      var s = this.state, self = this;
+      var rank = this.ranking();
+      var wI = rank[0]!=null?rank[0]:0, wP = s.players[wI]||s.players[0];
+      var totalTime = s.endedAt && s.startedAt ? this.clk(s.endedAt-s.startedAt) : '00:00';
+      var winnerTitle = s.elims.length >= s.count-1 ? 'WINNER · LAST STANDING' : 'LEADER · HIGHEST LIFE';
+      var html = '<div style="position:fixed;inset:0;z-index:50;background:#060709;display:flex;flex-direction:column;padding:22px 16px 18px;gap:12px;overflow:auto;color:#fff">';
+      html += '<div style="text-align:center;margin-bottom:2px"><div style="font-size:12px;letter-spacing:.2em;color:rgba(255,255,255,.45);font-weight:600">MATCH SUMMARY</div>'
+        + '<div style="font-size:40px;font-weight:800;color:#fff;margin-top:8px;letter-spacing:.02em">'+totalTime+'</div>'
+        + '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-top:2px">'+s.count+' players · '+(s.direction===1?'clockwise':'counter-clockwise')+'</div></div>';
+      html += '<div style="border-radius:18px;background:linear-gradient(160deg, '+this.rgba(wP.color,0.28)+', '+this.rgba(wP.color,0.08)+'),#0b0c0f;border:1px solid '+this.rgba(wP.color,0.55)+';padding:18px;display:flex;align-items:center;gap:16px">'
+        + '<div style="flex:1;min-width:0"><div style="font-size:11px;letter-spacing:.18em;color:'+this.lighten(wP.color)+';font-weight:700">'+winnerTitle+'</div>'
+        + '<div style="font-size:26px;font-weight:800;color:#fff;margin-top:4px">'+esc(wP.name)+'</div>'
+        + '<div style="font-size:13px;color:rgba(255,255,255,.55);margin-top:4px">'+this.clk(s.totals[wI])+' on clock</div></div>'
+        + '<div style="font-size:52px;font-weight:800;color:'+this.lighten(wP.color)+'">'+s.life[wI]+'</div></div>';
+      html += '<div style="display:flex;flex-direction:column;gap:10px">';
+      rank.slice(1).forEach(function(i, r){
+        var p = s.players[i], e = s.elims.find(function(x){ return x.i===i; });
+        var dealt = s.cmd[i].reduce(function(a,c){ return a+c; }, 0);
+        var rankNote = self.ord(r+2) + (e ? (e.how==='cmd' ? ' · lethal ⚔ from '+(e.by>=0?esc(s.players[e.by].name):'?') : (e.by>=0?' · out by '+esc(s.players[e.by].name):' · eliminated')) : '');
+        var borderC = e && e.how==='cmd' ? 'rgba(255,91,91,.3)' : 'rgba(255,255,255,.09)';
+        var lifeColor = e ? 'rgba(255,255,255,.45)' : 'rgba(255,255,255,.9)';
+        var rankColor = e ? '#ff7a7a' : 'rgba(255,255,255,.4)';
+        html += '<div data-act="expand" data-i="'+i+'" style="border-radius:16px;background:#0b0c0f;border:1px solid '+borderC+';padding:14px 16px;display:flex;align-items:center;gap:14px">'
+          + '<div style="width:10px;height:38px;border-radius:5px;background:'+p.color+';flex:none"></div>'
+          + '<div style="flex:1;min-width:0"><div style="font-size:16px;font-weight:700;color:#fff">'+esc(p.name)+' <span style="font-size:12px;color:'+rankColor+';font-weight:600">'+rankNote+'</span></div>'
+          + '<div style="font-size:12.5px;color:rgba(255,255,255,.5);margin-top:3px">low '+s.lifeMin[i]+' · high '+s.lifeMax[i]+' · '+self.clk(s.totals[i])+' on clock</div>';
+        if(s.expanded===i){
+          html += '<div style="font-size:12.5px;color:rgba(255,255,255,.65);margin-top:8px;line-height:1.6;border-top:1px solid rgba(255,255,255,.08);padding-top:8px">Net '+((s.life[i]-s.startingLife>=0?'+':'')+(s.life[i]-s.startingLife))+' life · '+self.clk(s.totals[i])+' on clock'+(dealt?' · dealt '+dealt+' ⚔':'')+'</div>';
+        }
+        html += '</div><div style="font-size:30px;font-weight:800;color:'+lifeColor+'">'+s.life[i]+'</div></div>';
+      });
+      html += '</div>';
+      var anyCd = s.cmd.some(function(r){ return r.some(function(v){ return v>0; }); });
+      if(anyCd){
+        var initials = s.players.map(function(p){ return (p.name.trim()[0]||'?').toUpperCase(); });
+        html += '<div style="border-radius:16px;background:#0b0c0f;border:1px solid rgba(255,255,255,.09);padding:14px 16px">'
+          + '<div style="font-size:11px;letter-spacing:.16em;color:rgba(255,255,255,.4);font-weight:700;margin-bottom:10px">COMMANDER DAMAGE · DEALER → RECEIVER</div>'
+          + '<div style="display:grid;grid-template-columns:52px repeat('+s.count+',1fr);gap:4px;font-size:12px">';
+        html += '<div style="padding:5px 0"></div>';
+        for(var c=0;c<s.count;c++) html += '<div style="text-align:center;color:'+this.lighten(s.players[c].color)+';font-weight:700;padding:5px 0">'+esc(initials[c])+'</div>';
+        for(var rI=0;rI<s.count;rI++){
+          html += '<div style="text-align:left;color:'+this.lighten(s.players[rI].color)+';font-weight:700;padding:5px 0">'+esc(s.players[rI].name.slice(0,6))+'</div>';
+          for(var c2=0;c2<s.count;c2++){
+            if(rI===c2) html += '<div style="text-align:center;color:rgba(255,255,255,.2);padding:5px 0">—</div>';
+            else { var v=s.cmd[rI][c2], lethal=v>=21; html += '<div style="text-align:center;color:'+(lethal?'#ff7a7a':'#fff')+';background:'+(lethal?'rgba(255,91,91,.25)':'rgba(255,255,255,.05)')+';border:1px solid '+(lethal?'rgba(255,91,91,.5)':'transparent')+';border-radius:6px;font-weight:'+(lethal?800:400)+';padding:5px 0">'+v+'</div>'; }
+          }
+        }
+        html += '</div></div>';
+      }
+      html += '<div style="margin-top:auto;display:flex;gap:10px;padding-top:6px">'
+        + '<button data-act="copySummary" style="flex:1;padding:14px;border-radius:14px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:15px;font-weight:600;font-family:inherit">'+(s.copied?'Copied ✓':'Copy summary')+'</button>'
+        + '<button data-act="newGame" style="flex:1;padding:14px;border-radius:14px;border:0;background:#2d7bff;color:#fff;font-size:15px;font-weight:700;font-family:inherit">New game</button></div>'
+        + '<button data-act="backToGame" style="padding:10px;border-radius:12px;border:0;background:transparent;color:rgba(255,255,255,.45);font-size:13px;font-weight:600;font-family:inherit">Back to game</button>';
+      html += '</div>';
+      return html;
+    },
+
+    // ---------- overlay delegated handlers ----------
+    onOverlayClick: function(e){
+      var el = e.target.closest('[data-act]'); if(!el) return;
+      var act = el.getAttribute('data-act');
+      var i = el.hasAttribute('data-i') ? +el.getAttribute('data-i') : -1;
+      var s = this.state;
+      switch(act){
+        case 'closeSettings': this.set({ settingsOpen:false, confirmReset:false, openColorIdx:-1, addingFor:-1, advOpen:false }); break;
+        case 'toggleSw': this.set({ openColorIdx: s.openColorIdx===i?-1:i }); break;
+        case 'toggleCd': { var players = s.players.map(function(q,j){ return j===i?Object.assign({},q,{cd:!q.cd}):q; }); this.set({ players:players }); break; }
+        case 'pickColor': this.setPlayerColor(i, el.getAttribute('data-c')); break;
+        case 'confirmAdd': this.confirmAddName(i); break;
+        case 'setCount': this.setCount(+el.getAttribute('data-n')); break;
+        case 'toggleTimer':
+          if(s.timerEnabled) this.set({ timerEnabled:false, active:-1, paused:false, phase: s.phase==='rolling'?'playing':s.phase, rollIdx:-1 }, function(){ if(App.rollTimer){ clearTimeout(App.rollTimer); App.rollTimer=null; } if(App.rollRaf){ cancelAnimationFrame(App.rollRaf); App.rollRaf=null; } });
+          else this.set({ timerEnabled:true, phase:'playing', active:0, turnAccum:0, turnResume:Date.now(), startedAt:s.startedAt||Date.now() });
+          break;
+        case 'toggleAdv': this.set({ advOpen:!s.advOpen }); break;
+        case 'lifeDown': this.set({ startingLife: Math.max(10, s.startingLife-5) }); break;
+        case 'lifeUp': this.set({ startingLife: Math.min(100, s.startingLife+5) }); break;
+        case 'viewStats': this.viewStats(); break;
+        case 'resetGame': if(s.confirmReset) this.set({ settingsOpen:false, confirmReset:false }, function(){ App.resetAll(); }); else this.set({ confirmReset:true }); break;
+        case 'expand': this.set({ expanded: s.expanded===i?-1:i }); break;
+        case 'copySummary': { var txt=this.summaryText(); var done=function(){ App.set({copied:true}); setTimeout(function(){ App.set({copied:false}); },1600); }; if(navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done,done); else done(); break; }
+        case 'newGame': this.resetAll(); break;
+        case 'backToGame': this.backToGame(); break;
+      }
+    },
+    onOverlayChange: function(e){
+      var el = e.target.closest('[data-act]'); if(!el) return;
+      if(el.getAttribute('data-act')==='selName'){
+        var i = +el.getAttribute('data-i'), v = el.value;
+        if(v==='__add__') this.set({ addingFor:i, newName:'' });
+        else this.applyName(i, v);
+      }
+    },
+    onOverlayInput: function(e){
+      var el = e.target.closest('[data-act]'); if(!el) return;
+      var act = el.getAttribute('data-act');
+      if(act==='newName'){ this.state.newName = el.value; return; }         // silent, keep focus
+      if(act==='setCustom'){ this.setPlayerColorLive(+el.getAttribute('data-i'), el.value); return; }
+      if(act==='slider'){ this.onSlider(el.getAttribute('data-key'), +el.value); return; }
+    },
+    setPlayerColorLive: function(i, color){
+      var s = this.state;
+      s.players[i].color = color;
+      var entry = s.roster.find(function(r){ return r.name===s.players[i].name; });
+      if(entry) entry.color = color;
+      this.save(); this.paintBoard();  // live board, don't rebuild the open picker
+    },
+    onSlider: function(key, val){
+      var s = this.state, lbl = document.getElementById('lbl-'+key), suffix='%', txt=val;
+      switch(key){
+        case 'deltaFade': s.deltaFadeMs = val*1000; suffix=' s'; break;
+        case 'lifeScale': s.lifeScale = val; break;
+        case 'timerScale': s.timerScale = val; break;
+        case 'glow': s.glowStrength = val; break;
+        case 'bleed': s.colorBleed = val; break;
+        case 'cdScale': s.cdScale = val; break;
+        case 'solo': s.soloScale = val; break;
+        case 'advOpacity':
+          s.advOpacity = val;
+          var op = Math.max(0.1, 1-val/100), sheet=document.getElementById('sheet'), scrim=document.getElementById('scrim');
+          if(sheet) sheet.style.opacity = op;
+          if(scrim) scrim.style.background = 'rgba(0,0,0,'+(0.55*op).toFixed(3)+')';
+          break;
+      }
+      if(lbl) lbl.textContent = txt+suffix;
+      this.save(); this.paintBoard();   // live board update; leave the slider (and sheet) intact
+    },
+
+    // ---------- boot ----------
+    init: function(){
+      this._seedRoster = this.seedRoster();
+      var saved = null;
+      try{ saved = JSON.parse(localStorage.getItem(KEY)); }catch(e){}
+      if(saved && saved.count){
+        this.state = Object.assign(this.fresh(saved.count), saved, { settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', advOpen:false });
+      } else {
+        this.state = this.fresh(4);
+      }
+      if(!this.state.roster || !this.state.roster.length) this.state.roster = this._seedRoster;
+
+      var ov = document.getElementById('overlay');
+      ov.addEventListener('click', function(e){ App.onOverlayClick(e); });
+      ov.addEventListener('change', function(e){ App.onOverlayChange(e); });
+      ov.addEventListener('input', function(e){ App.onOverlayInput(e); });
+
+      window.addEventListener('pointermove', function(e){ if(App.press) App.boxMove(e); if(App.bar) App.barMove(e); });
+      window.addEventListener('pointerup', function(){ if(App.press) App.boxUp(); else if(App.bar) App.barUp(); });
+      window.addEventListener('pointercancel', function(){ App.clearPress(); App.barCancel(); });
+      window.addEventListener('resize', function(){ App.paintBoard(); });
+
+      this.paint();
+
+      if(this.state.phase==='rolling' && this.state.timerEnabled) this.startRoll();
+      else if(this.state.phase==='rolling') this.set({ phase:'playing' });
+
+      this.tick = setInterval(function(){
+        var s = App.state, changed=false, deltas = s.deltas.slice(), now=Date.now();
+        deltas.forEach(function(d,i){ if(d && d.until<now){ deltas[i]=null; changed=true; } });
+        if(changed){ s.deltas = deltas; App.paintBoard(); }
+        else if(s.phase==='playing' && s.timerEnabled && !s.paused && s.active>=0) App.paintBoard();
+      }, 250);
+
+      // debug handle
+      window.MTG = { app: App, get state(){ return App.state; }, curTurnMs:function(){ return App.curTurnMs(); } };
+    }
   };
 
-  boot();
+  App.init();
 
-  // ---- PWA: install option + service worker ----------------------------
-  (function(){
-    function isStandalone(){
-      return window.matchMedia('(display-mode: standalone)').matches
-          || window.matchMedia('(display-mode: fullscreen)').matches
-          || window.matchMedia('(display-mode: minimal-ui)').matches
-          || window.navigator.standalone === true;
-    }
-    var installRow = document.getElementById('installRow');
-    var installBtn = document.querySelector('[data-testid="install-btn"]');
-    var deferred = null;
-    window.addEventListener('beforeinstallprompt', function(e){
-      e.preventDefault();
-      deferred = e;
-      if(installRow && !isStandalone()) installRow.style.display = '';
-    });
-    if(installBtn) installBtn.addEventListener('click', function(){
-      if(!deferred) return;
-      deferred.prompt();
-      deferred.userChoice.then(function(c){
-        if(c && c.outcome === 'accepted' && installRow) installRow.style.display = 'none';
-        deferred = null;
-      }).catch(function(){ deferred = null; });
-    });
-    window.addEventListener('appinstalled', function(){
-      if(installRow) installRow.style.display = 'none';
-      deferred = null;
-    });
-
-    if('serviceWorker' in navigator){
-      window.addEventListener('load', function(){
-        navigator.serviceWorker.register('sw.js').catch(function(){});
-      });
-    }
-  })();
+  // ---- PWA service worker ----
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', function(){ navigator.serviceWorker.register('sw.js').catch(function(){}); });
+  }
 })();
 </script>
 </body>
