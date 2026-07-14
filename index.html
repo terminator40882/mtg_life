@@ -46,7 +46,7 @@
   "use strict";
 
   var PAL = ['#C0392B','#2471C7','#1E9E54','#D4A017','#8E44AD','#16A085','#7F8C8D','#E4568B','#E67E22','#3BA7DB','#ECECEC','#2D6A4F'];
-  var KEY = 'cmdr-obsidian-proto-v3';
+  var KEY = 'cmdr-obsidian-proto-v4';
   var BOX_RADIUS = 20;
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -60,13 +60,15 @@
 
     // ---------- roster / fresh / persistence ----------
     seedRoster: function(){
-      var names = ['Philip','Yannic','Maxi','Till','Maik','Pablo','Nasso','Robin','Franzi','Katha','Jan'];
-      return names.map(function(name,i){ return { name:name, color:PAL[i%PAL.length], used:0 }; });
+      var names = ['Yannic','Maxi','Till','Maik','Pablo','Nasso','Robin','Franzi','Katha','Jan','Dominic'];
+      names.sort(function(a,b){ return a.localeCompare(b); });
+      var ordered = ['Philip'].concat(names);   // Philip first, the rest alphabetical
+      return ordered.map(function(name,i){ return { name:name, color: name==='Philip' ? '#8800FF' : PAL[i%PAL.length], used:0 }; });
     },
     fresh: function(count){
       var prev = this.state || {};
       var sl = prev.startingLife != null ? prev.startingLife : 40;
-      var te = prev.timerEnabled != null ? prev.timerEnabled : true;
+      var te = prev.timerEnabled != null ? prev.timerEnabled : false;
       var roster = (prev.roster && prev.roster.length) ? prev.roster : (this._seedRoster || this.seedRoster());
       var players = [];
       for(var i=0;i<count;i++){
@@ -89,15 +91,15 @@
         dealing: -1,
         deltas: fill(null),
         timerEnabled: te,
-        deltaFadeMs: prev.deltaFadeMs != null ? prev.deltaFadeMs : 4000,
-        lifeScale: prev.lifeScale != null ? prev.lifeScale : 100,
+        deltaFadeMs: prev.deltaFadeMs != null ? prev.deltaFadeMs : 5000,
+        lifeScale: prev.lifeScale != null ? prev.lifeScale : 120,
         timerScale: prev.timerScale != null ? prev.timerScale : 100,
-        glowStrength: prev.glowStrength != null ? prev.glowStrength : 60,
-        numWhite: prev.numWhite != null ? prev.numWhite : 45,
-        cdScale: prev.cdScale != null ? prev.cdScale : 140,
-        soloScale: prev.soloScale != null ? prev.soloScale : 100,
-        advOpacity: prev.advOpacity != null ? prev.advOpacity : 50,
-        colorBleed: prev.colorBleed != null ? prev.colorBleed : 100,
+        glowStrength: prev.glowStrength != null ? prev.glowStrength : 49,
+        numWhite: prev.numWhite != null ? prev.numWhite : 20,
+        cdScale: prev.cdScale != null ? prev.cdScale : 145,
+        soloScale: prev.soloScale != null ? prev.soloScale : 61,
+        advOpacity: prev.advOpacity != null ? prev.advOpacity : 37,
+        colorBleed: prev.colorBleed != null ? prev.colorBleed : 55,
         advOpen: false,
         settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', installHelp:false,
         rollIdx:-1
@@ -412,7 +414,7 @@
       return this.state.roster.slice().sort(function(a,b){
         if(a.name==='Philip' && b.name!=='Philip') return -1;
         if(b.name==='Philip' && a.name!=='Philip') return 1;
-        return (b.used||0)-(a.used||0);
+        return a.name.localeCompare(b.name);   // Philip first, the rest alphabetical
       });
     },
     applyName: function(i, name){
@@ -922,7 +924,7 @@
       if(saved && saved.count){
         this.state = Object.assign(this.fresh(saved.count), saved, { settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', advOpen:false, installHelp:false });
       } else {
-        this.state = this.fresh(4);
+        this.state = this.fresh(5);
       }
       if(!this.state.roster || !this.state.roster.length) this.state.roster = this._seedRoster;
 
