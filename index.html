@@ -93,6 +93,7 @@
         lifeScale: prev.lifeScale != null ? prev.lifeScale : 100,
         timerScale: prev.timerScale != null ? prev.timerScale : 100,
         glowStrength: prev.glowStrength != null ? prev.glowStrength : 60,
+        numWhite: prev.numWhite != null ? prev.numWhite : 45,
         cdScale: prev.cdScale != null ? prev.cdScale : 140,
         soloScale: prev.soloScale != null ? prev.soloScale : 100,
         advOpacity: prev.advOpacity != null ? prev.advOpacity : 50,
@@ -104,7 +105,7 @@
     },
     save: function(){
       var s = this.state, out = {};
-      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity'].forEach(function(k){ out[k]=s[k]; });
+      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','numWhite','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity'].forEach(function(k){ out[k]=s[k]; });
       out.turnAccum = this.curTurnMs();
       out.turnResume = s.turnResume ? Date.now() : null;
       try{ localStorage.setItem(KEY, JSON.stringify(out)); }catch(e){}
@@ -264,7 +265,7 @@
 
     // ---------- colour helpers ----------
     rgba: function(hex, a){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; },
-    lighten: function(hex){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); var f=function(c){return Math.round(c+(255-c)*0.45);}; return 'rgb('+f((n>>16)&255)+','+f((n>>8)&255)+','+f(n&255)+')'; },
+    lighten: function(hex, mix){ mix=(mix==null?0.45:mix); var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); var f=function(c){return Math.round(c+(255-c)*mix);}; return 'rgb('+f((n>>16)&255)+','+f((n>>8)&255)+','+f(n&255)+')'; },
     isLight: function(hex){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))>150; },
     mmss: function(ms){ var t=Math.max(0,Math.floor(ms/1000)); return [String(Math.floor(t/60)).padStart(2,'0'), String(t%60).padStart(2,'0')]; },
     clk: function(ms){ var p=this.mmss(ms); return p[0]+':'+p[1]; },
@@ -325,7 +326,7 @@
       var active = s.timerEnabled && s.phase==='playing' && s.active===i && s.dealing<0;
       var rolling = s.phase==='rolling' && s.rollIdx===i;
       var radius = BOX_RADIUS;
-      var numColor = black ? '#fff' : dead ? 'rgba(255,255,255,.35)' : this.lighten(baseColor);
+      var numColor = black ? '#fff' : dead ? 'rgba(255,255,255,.35)' : this.lighten(baseColor, (s.numWhite!=null?s.numWhite:45)/100);
       var outer = block==='top' ? 'top' : 'bottom';
       var inner = block==='top' ? 'bottom' : 'top';
       var scale = s.lifeScale/100;
@@ -388,7 +389,7 @@
         borderC: rolling ? 'rgba(255,255,255,.85)' : active ? this.rgba(baseColor,0.6) : black ? 'rgba(255,255,255,.3)' : this.rgba(baseColor,0.35),
         spin: active, showNumber: !black,
         numSize: numSize, numColor: numColor,
-        numShadow: black||dead ? 'none' : '0 0 42px '+this.rgba(baseColor,0.45*glow),
+        numShadow: (black||dead) ? 'none' : ('0 0 '+Math.round(42*Math.max(1,glow))+'px '+this.rgba(baseColor,Math.min(1,0.45*glow))+(glow>1?', 0 0 '+Math.round(23*glow)+'px '+this.rgba(baseColor,Math.min(1,0.55*glow)):'')),
         chipPos:chipPos, cdPos:cdPos, deltaPos:deltaPos,
         delta: d && d.until>Date.now() ? (d.sum>0?'+'+d.sum:String(d.sum)) : null,
         dead: dead && !(d && d.until>Date.now()),
@@ -691,7 +692,8 @@
           slider('Hide change after','deltaFade',1,60,Math.round(s.deltaFadeMs/1000),' s'),
           slider('Life number size','lifeScale',50,200,s.lifeScale,'%'),
           slider('Timer size','timerScale',50,200,s.timerScale,'%'),
-          slider('Number glow','glow',0,100,s.glowStrength,'%'),
+          slider('Number glow','glow',0,200,s.glowStrength,'%'),
+          slider('Number brightness','numWhite',0,100,(s.numWhite!=null?s.numWhite:45),'%'),
           slider('Color bleed','bleed',0,200,s.colorBleed,'%'),
           slider('Commander damage size','cdScale',70,200,s.cdScale,'%'),
           slider('Player 5 row height','solo',50,150,s.soloScale,'%'),
@@ -735,23 +737,26 @@
       var bytes = [1, s.count, s.startingLife,
         (s.timerEnabled?1:0)|(s.direction===1?2:0),
         Math.round(s.deltaFadeMs/1000),
-        s.lifeScale, s.timerScale, s.glowStrength, s.colorBleed, s.cdScale, s.soloScale, s.advOpacity];
+        s.lifeScale, s.timerScale, s.glowStrength, s.colorBleed, s.cdScale, s.soloScale, s.advOpacity,
+        (s.numWhite!=null?s.numWhite:45)];
       return bytes.map(function(b){ return ('0'+((b|0)&255).toString(16)).slice(-2); }).join('');
     },
     applyHash: function(str){
       var hex = (str||'').trim().replace(/[^0-9a-fA-F]/g,'');
       if(hex.length < 24) return false;
-      var b = []; for(var k=0;k<12;k++) b.push(parseInt(hex.substr(k*2,2),16));
+      var nb = Math.floor(hex.length/2);
+      var b = []; for(var k=0;k<nb;k++) b.push(parseInt(hex.substr(k*2,2),16));
       if(b[0]!==1) return false;
       var clamp = function(v,lo,hi){ v=v|0; return Math.max(lo,Math.min(hi,v)); };
       var count = clamp(b[1],2,6);
       var patch = {
         startingLife: clamp(b[2],10,100), deltaFadeMs: clamp(b[4],1,60)*1000,
         lifeScale: clamp(b[5],50,200), timerScale: clamp(b[6],50,200),
-        glowStrength: clamp(b[7],0,100), colorBleed: clamp(b[8],0,200),
+        glowStrength: clamp(b[7],0,200), colorBleed: clamp(b[8],0,200),
         cdScale: clamp(b[9],70,200), soloScale: clamp(b[10],50,150), advOpacity: clamp(b[11],0,90),
         direction: (b[3]&2)?1:-1, timerEnabled: !!(b[3]&1)
       };
+      if(b.length>12) patch.numWhite = clamp(b[12],0,100);
       var wasTe = this.state.timerEnabled;
       if(count !== this.state.count){
         var next = this.fresh(count); Object.assign(next, patch, { settingsOpen:true });
@@ -855,10 +860,15 @@
     },
     onOverlayChange: function(e){
       var el = e.target.closest('[data-act]'); if(!el) return;
-      if(el.getAttribute('data-act')==='selName'){
+      var act = el.getAttribute('data-act');
+      if(act==='selName'){
         var i = +el.getAttribute('data-i'), v = el.value;
         if(v==='__add__') this.set({ addingFor:i, newName:'' });
         else this.applyName(i, v);
+      } else if(act==='setCustom'){
+        // commit on picker close so the custom colour sticks even on browsers that
+        // only fire 'change' (not live 'input'); updates board + roster + swatch
+        this.setPlayerColor(+el.getAttribute('data-i'), el.value);
       }
     },
     onOverlayInput: function(e){
@@ -882,6 +892,7 @@
         case 'lifeScale': s.lifeScale = val; break;
         case 'timerScale': s.timerScale = val; break;
         case 'glow': s.glowStrength = val; break;
+        case 'numWhite': s.numWhite = val; break;
         case 'bleed': s.colorBleed = val; break;
         case 'cdScale': s.cdScale = val; break;
         case 'solo': s.soloScale = val; break;
