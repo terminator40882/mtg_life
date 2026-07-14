@@ -48,6 +48,8 @@
   var PAL = ['#C0392B','#2471C7','#1E9E54','#D4A017','#8E44AD','#16A085','#7F8C8D','#E4568B','#E67E22','#3BA7DB','#ECECEC','#2D6A4F'];
   var KEY = 'cmdr-obsidian-proto-v4';
   var BOX_RADIUS = 20;
+  var DEFAULT_CODE = '010528000578643137913d2514';   // built-in fallback default settings code
+  var CONFIG_URL = 'config.json';                     // online source of player colours + default code
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
   function esc(s){ return String(s).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
@@ -57,6 +59,7 @@
     press: null, bar: null, rollTimer: null, rollRaf: null, rollTarget: null,
     lastTap: 0, passTimer: null, tick: null,
     _gap: 6, _numCap: 1e9,
+    onlineDefaultCode: null,
 
     // ---------- roster / fresh / persistence ----------
     seedRoster: function(){
@@ -101,13 +104,14 @@
         advOpacity: prev.advOpacity != null ? prev.advOpacity : 37,
         colorBleed: prev.colorBleed != null ? prev.colorBleed : 55,
         advOpen: false,
+        onlineColors: prev.onlineColors || {},   // last-synced online colour per name (to detect changes)
         settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', installHelp:false,
         rollIdx:-1
       };
     },
     save: function(){
       var s = this.state, out = {};
-      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','numWhite','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity'].forEach(function(k){ out[k]=s[k]; });
+      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','numWhite','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity','onlineColors'].forEach(function(k){ out[k]=s[k]; });
       out.turnAccum = this.curTurnMs();
       out.turnResume = s.turnResume ? Date.now() : null;
       try{ localStorage.setItem(KEY, JSON.stringify(out)); }catch(e){}
@@ -916,6 +920,36 @@
       this.save(); this.paintBoard();   // live board update; leave the slider (and sheet) intact
     },
 
+    // ---------- online config (player colours + default settings code) ----------
+    // Fetched from CONFIG_URL on boot (served alongside the app, SW-cached for
+    // offline). Applies only colours that CHANGED online since we last synced, so a
+    // player's own custom colour isn't clobbered; also stores the default code used
+    // when the settings-code field is cleared.
+    loadOnlineConfig: function(){
+      var self = this;
+      if(typeof fetch !== 'function') return;
+      fetch(CONFIG_URL).then(function(r){ return (r && r.ok) ? r.json() : null; }).then(function(cfg){
+        if(!cfg) return;
+        if(typeof cfg.defaultSettings==='string' && /^[0-9a-fA-F]{24,}$/.test(cfg.defaultSettings.trim())) self.onlineDefaultCode = cfg.defaultSettings.trim();
+        if(Array.isArray(cfg.players)){
+          var s = self.state, seen = s.onlineColors || {}, changed = false;
+          var roster = s.roster.map(function(r){ return Object.assign({}, r); });
+          cfg.players.forEach(function(pc){
+            if(!pc || !pc.name || !pc.color) return;
+            var hex = String(pc.color).trim(); if(hex[0] !== '#') hex = '#'+hex;
+            if(!/^#[0-9a-fA-F]{6}$/.test(hex)) return;
+            if((seen[pc.name]||'').toLowerCase() === hex.toLowerCase()) return;   // unchanged online → leave local as-is
+            seen[pc.name] = hex;
+            var entry = roster.find(function(r){ return r.name===pc.name; });
+            if(entry) entry.color = hex; else roster.push({ name:pc.name, color:hex, used:0 });
+            s.players.forEach(function(p){ if(p.name===pc.name) p.color = hex; });
+            changed = true;
+          });
+          if(changed){ s.roster = roster; s.onlineColors = seen; self.save(); self.paint(); }
+        }
+      }).catch(function(){});
+    },
+
     // ---------- boot ----------
     init: function(){
       this._seedRoster = this.seedRoster();
@@ -934,7 +968,12 @@
       ov.addEventListener('input', function(e){ App.onOverlayInput(e); });
       ov.addEventListener('keydown', function(e){
         var el = e.target.closest && e.target.closest('[data-act="hash"]');
-        if(el && (e.key==='Enter' || e.keyCode===13)){ e.preventDefault(); el.blur(); App.applyHash(el.value); }
+        if(el && (e.key==='Enter' || e.keyCode===13)){
+          e.preventDefault(); el.blur();
+          var v = (el.value||'').trim();
+          // cleared field → reset to the online default settings code (or built-in fallback)
+          App.applyHash(v ? v : (App.onlineDefaultCode || DEFAULT_CODE));
+        }
       });
 
       window.addEventListener('pointermove', function(e){ if(App.press) App.boxMove(e); if(App.bar) App.barMove(e); });
@@ -948,6 +987,7 @@
       window.addEventListener('appinstalled', function(){ App.deferredPrompt = null; if(App.state.settingsOpen || App.state.installHelp) App.set({ installHelp:false }); });
 
       this.paint();
+      this.loadOnlineConfig();   // pull any new player colours / default code from online
 
       if(this.state.phase==='rolling' && this.state.timerEnabled) this.startRoll();
       else if(this.state.phase==='rolling') this.set({ phase:'playing' });

@@ -1,0 +1,17 @@
+{
+  "defaultSettings": "010528000578643137913d2514",
+  "players": [
+    { "name": "Philip",  "color": "#8800FF" },
+    { "name": "Dominic", "color": "#2471C7" },
+    { "name": "Franzi",  "color": "#1E9E54" },
+    { "name": "Jan",     "color": "#D4A017" },
+    { "name": "Katha",   "color": "#8E44AD" },
+    { "name": "Maik",    "color": "#16A085" },
+    { "name": "Maxi",    "color": "#7F8C8D" },
+    { "name": "Nasso",   "color": "#E4568B" },
+    { "name": "Pablo",   "color": "#E67E22" },
+    { "name": "Robin",   "color": "#3BA7DB" },
+    { "name": "Till",    "color": "#ECECEC" },
+    { "name": "Yannic",  "color": "#2D6A4F" }
+  ]
+}

@@ -1,7 +1,7 @@
 /* Minimal service worker so the app is installable and works offline.
    Network-first so updates are picked up immediately, with a cache fallback. */
 const CACHE = 'cmdr-life-obsidian-v4';
-const ASSETS = ['./', './index.html', './manifest.webmanifest', './icon-192.png', './icon-512.png'];
+const ASSETS = ['./', './index.html', './manifest.webmanifest', './config.json', './icon-192.png', './icon-512.png'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).then(() => self.skipWaiting()));
