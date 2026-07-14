@@ -500,7 +500,7 @@
       var growFor = function(r){ return r.length < stdCols ? soloSc : 1; };
       var totalGrow = allRows.reduce(function(a,r){ return a+growFor(r); }, 0);
       var rowH = availH/totalGrow;
-      this._numCap = Math.min(stdW, rowH)*0.7;
+      this._numCap = Math.min(stdW, rowH)*0.86;
       var fullW = vw - 2*gap;
       var mkRow = function(r, block){ return r.map(function(seat, idx){ return self.makeBox(seat, block, r.length<stdCols?fullW:stdW, rowH*growFor(r), idx, r.length); }); };
       var rows = [];
