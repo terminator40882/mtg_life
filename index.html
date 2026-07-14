@@ -663,7 +663,10 @@
               var ring = c.toLowerCase()===p.color.toLowerCase() ? '2px solid #fff' : '2px solid rgba(255,255,255,.12)';
               playerCards += '<button data-act="pickColor" data-i="'+i+'" data-c="'+c+'" style="width:24px;height:24px;border-radius:50%;border:'+ring+';background:'+c+';padding:0"></button>';
             });
-            playerCards += '<input data-act="setCustom" data-i="'+i+'" type="color" value="'+p.color+'" style="width:28px;height:24px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:transparent;padding:1px"></div>';
+            playerCards += '<input data-act="setCustom" data-i="'+i+'" type="color" value="'+p.color+'" style="width:28px;height:24px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:transparent;padding:1px">'
+              // subtle hex readout tucked into the bottom-right of the picker
+              + '<span id="hex-'+i+'" style="margin-left:auto;align-self:flex-end;font-size:10px;font-weight:600;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.06em;color:rgba(255,255,255,.28)">'+esc(String(p.color).toUpperCase())+'</span>'
+              + '</div>';
           }
           playerCards += '</div>';
         });
@@ -885,7 +888,8 @@
       s.players[i].color = color;
       var entry = s.roster.find(function(r){ return r.name===s.players[i].name; });
       if(entry) entry.color = color;
-      this.save(); this.paintBoard();  // live board, don't rebuild the open picker
+      var hx = document.getElementById('hex-'+i); if(hx) hx.textContent = String(color).toUpperCase();
+      this.save(); this.paintBoard();  // live board + hex readout, don't rebuild the open picker
     },
     onSlider: function(key, val){
       var s = this.state, lbl = document.getElementById('lbl-'+key), suffix='%', txt=val;
