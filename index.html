@@ -20,6 +20,11 @@
     font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;
     font-variant-numeric:tabular-nums;color:#fff;
   }
+  /* Fill the whole screen edge-to-edge. Use the dynamic viewport (dvh) so the
+     board follows the real usable area — retracting browser bars, S22 Ultra
+     safe areas — instead of a stale window.innerHeight, leaving no unused strip. */
+  #app{position:fixed;inset:0;height:100vh;height:100dvh;width:100vw;width:100dvw;overflow:hidden;background:#060709}
+  #board{position:absolute;inset:0}
   *{box-sizing:border-box}
   input[type=range]{accent-color:#2d7bff}
   select{-webkit-appearance:none;appearance:none;
@@ -93,7 +98,7 @@
         advOpacity: prev.advOpacity != null ? prev.advOpacity : 50,
         colorBleed: prev.colorBleed != null ? prev.colorBleed : 100,
         advOpen: false,
-        settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'',
+        settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', installHelp:false,
         rollIdx:-1
       };
     },
@@ -263,6 +268,38 @@
     isLight: function(hex){ var h=hex.replace('#',''); var n=parseInt(h.length===3?h.split('').map(function(c){return c+c;}).join(''):h,16); return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))>150; },
     mmss: function(ms){ var t=Math.max(0,Math.floor(ms/1000)); return [String(Math.floor(t/60)).padStart(2,'0'), String(t%60).padStart(2,'0')]; },
     clk: function(ms){ var p=this.mmss(ms); return p[0]+':'+p[1]; },
+
+    // ---------- install (PWA) ----------
+    deferredPrompt: null,
+    isStandalone: function(){
+      return (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: fullscreen)').matches || window.matchMedia('(display-mode: minimal-ui)').matches)) || navigator.standalone === true;
+    },
+    isIOS: function(){ return /iphone|ipad|ipod/i.test(navigator.userAgent) || (navigator.platform==='MacIntel' && navigator.maxTouchPoints>1); },
+    doInstall: function(){
+      var self = this;
+      if(this.deferredPrompt){
+        var dp = this.deferredPrompt;
+        this.deferredPrompt = null;
+        dp.prompt();
+        if(dp.userChoice) dp.userChoice.then(function(){ if(self.state.settingsOpen) self.paintOverlay(); }, function(){});
+        return;
+      }
+      // no native prompt available (iOS Safari, or Chromium before the event) — show steps
+      this.set({ installHelp:true });
+    },
+    installHelpHTML: function(){
+      var ios = this.isIOS();
+      var steps = ios
+        ? '<b>iPhone / iPad (Safari):</b><br>1. Tap the Share button <span style="font-size:16px">􀈂</span> (□↑) in the toolbar.<br>2. Choose <b>Add to Home Screen</b>.<br>3. Tap <b>Add</b>.'
+        : 'Open your browser menu (⋮) and choose <b>Install app</b> or <b>Add to Home screen</b>.';
+      return '<div style="position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;padding:24px">'
+        + '<div data-act="closeInstallHelp" style="position:absolute;inset:0;background:rgba(0,0,0,.6)"></div>'
+        + '<div style="position:relative;max-width:340px;width:100%;background:#0e1014;border:1px solid rgba(255,255,255,.12);border-radius:18px;padding:20px;color:#fff">'
+        + '<div style="font-size:17px;font-weight:800;margin-bottom:10px">Install Commander Life</div>'
+        + '<div style="font-size:14px;line-height:1.7;color:rgba(255,255,255,.8)">'+steps+'</div>'
+        + '<button data-act="closeInstallHelp" style="margin-top:16px;width:100%;padding:12px;border-radius:12px;border:0;background:#2d7bff;color:#fff;font-size:15px;font-weight:700;font-family:inherit">Got it</button>'
+        + '</div></div>';
+    },
 
     // ---------- layout ----------
     layout: function(count){
@@ -442,7 +479,11 @@
       var barVisible = s.timerEnabled && s.phase!=='stats';
       var tsc = s.timerScale/100;
       var barHpx = Math.round(96*tsc);
-      var vw = window.innerWidth||384, vh = window.innerHeight||824;
+      // measure the actual fixed container (#app) so the board fills the real
+      // usable screen exactly — no unused strip from a stale window.innerHeight
+      var appEl = document.getElementById('app');
+      var vw = (appEl && appEl.clientWidth) || window.innerWidth || 384;
+      var vh = (appEl && appEl.clientHeight) || window.innerHeight || 824;
       var gap = Math.round(Math.max(6, Math.min(12, Math.min(vw,vh)*0.016)));
       this._gap = gap;
       var allRows = L.top.concat(L.bottom);
@@ -491,7 +532,7 @@
     paintBoard: function(){
       var s = this.state, V = this.renderVals();
       var board = document.getElementById('board');
-      board.style.cssText = 'position:fixed;inset:0;background:#060709;display:flex;flex-direction:column;gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
+      board.style.cssText = 'position:absolute;inset:0;background:#060709;display:flex;flex-direction:column;gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
       if(s.phase==='stats'){ board.innerHTML=''; return; }
       var html = '';
       V.rows.forEach(function(row){
@@ -572,10 +613,11 @@
 
     // ---------- overlay (settings / stats) ----------
     paintOverlay: function(){
-      var s = this.state, ov = document.getElementById('overlay');
-      if(s.settingsOpen){ ov.innerHTML = this.settingsHTML(); }
-      else if(s.phase==='stats'){ ov.innerHTML = this.statsHTML(); }
-      else { ov.innerHTML = ''; }
+      var s = this.state, ov = document.getElementById('overlay'), html = '';
+      if(s.settingsOpen) html = this.settingsHTML();
+      else if(s.phase==='stats') html = this.statsHTML();
+      if(s.installHelp) html += this.installHelpHTML();
+      ov.innerHTML = html;
     },
     settingsHTML: function(){
       var s = this.state, self = this;
@@ -670,6 +712,7 @@
         + '<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">PLAYER COUNT</div><div style="display:flex;gap:8px">'+countOpts+'</div></div>'
         + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Turn timer</div>'
         + '<button data-act="toggleTimer" style="width:56px;height:32px;border-radius:999px;border:0;background:'+(s.timerEnabled?'#2d7bff':'rgba(255,255,255,.15)')+';position:relative;flex:none"><span style="position:absolute;top:3px;left:'+(s.timerEnabled?27:3)+'px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .18s"></span></button></div>'
+        + (this.isStandalone() ? '' : '<button data-act="install" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span style="font-size:16px">⤓</span><span>Install app</span></button>')
         + '<button data-act="toggleAdv" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span>Advanced settings</span><span style="color:rgba(255,255,255,.5);font-size:12px">'+(s.advOpen?'▲':'▼')+'</span></button>'
         + adv
         + '<button data-act="viewStats" style="padding:14px;border-radius:14px;border:1px solid rgba(45,123,255,.5);background:rgba(45,123,255,.12);color:#7db8ff;font-size:15px;font-weight:700;font-family:inherit">View match stats</button>'
@@ -743,6 +786,8 @@
       var s = this.state;
       switch(act){
         case 'closeSettings': this.set({ settingsOpen:false, confirmReset:false, openColorIdx:-1, addingFor:-1, advOpen:false }); break;
+        case 'install': this.doInstall(); break;
+        case 'closeInstallHelp': this.set({ installHelp:false }); break;
         case 'toggleSw': this.set({ openColorIdx: s.openColorIdx===i?-1:i }); break;
         case 'toggleCd': { var players = s.players.map(function(q,j){ return j===i?Object.assign({},q,{cd:!q.cd}):q; }); this.set({ players:players }); break; }
         case 'pickColor': this.setPlayerColor(i, el.getAttribute('data-c')); break;
@@ -812,7 +857,7 @@
       var saved = null;
       try{ saved = JSON.parse(localStorage.getItem(KEY)); }catch(e){}
       if(saved && saved.count){
-        this.state = Object.assign(this.fresh(saved.count), saved, { settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', advOpen:false });
+        this.state = Object.assign(this.fresh(saved.count), saved, { settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', advOpen:false, installHelp:false });
       } else {
         this.state = this.fresh(4);
       }
@@ -827,6 +872,11 @@
       window.addEventListener('pointerup', function(){ if(App.press) App.boxUp(); else if(App.bar) App.barUp(); });
       window.addEventListener('pointercancel', function(){ App.clearPress(); App.barCancel(); });
       window.addEventListener('resize', function(){ App.paintBoard(); });
+      if(window.visualViewport) window.visualViewport.addEventListener('resize', function(){ App.paintBoard(); });
+
+      // PWA install: capture Android/Chromium's prompt; refresh the button on install
+      window.addEventListener('beforeinstallprompt', function(e){ e.preventDefault(); App.deferredPrompt = e; if(App.state.settingsOpen) App.paintOverlay(); });
+      window.addEventListener('appinstalled', function(){ App.deferredPrompt = null; if(App.state.settingsOpen || App.state.installHelp) App.set({ installHelp:false }); });
 
       this.paint();
 
