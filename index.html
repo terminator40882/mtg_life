@@ -675,34 +675,43 @@
       });
 
       var slider = function(label, key, min, max, val, suffix){
-        return '<div style="display:flex;flex-direction:column;gap:6px">'
+        return '<div style="display:flex;flex-direction:column;gap:8px">'
           + '<div style="display:flex;justify-content:space-between;font-size:14px"><span style="font-weight:600">'+label+'</span><span id="lbl-'+key+'" style="color:rgba(255,255,255,.55)">'+val+suffix+'</span></div>'
           + '<input data-act="slider" data-key="'+key+'" type="range" min="'+min+'" max="'+max+'" value="'+val+'" style="width:100%"></div>';
       };
 
-      var adv = '';
+      // ---- Advanced settings: fullscreen, no-scroll panel with a close button up top ----
       if(s.advOpen){
-        adv = '<div style="display:flex;flex-direction:column;gap:20px">'
-          + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Starting life</div>'
+        var lifeRow = '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:14px;font-weight:600">Starting life</div>'
           + '<div style="display:flex;align-items:center;gap:10px">'
           + '<button data-act="lifeDown" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:18px">−</button>'
           + '<div style="width:44px;text-align:center;font-size:18px;font-weight:800">'+s.startingLife+'</div>'
-          + '<button data-act="lifeUp" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:18px">+</button></div></div>'
-          + slider('Hide change after','deltaFade',1,60,Math.round(s.deltaFadeMs/1000),' s')
-          + slider('Life number size','lifeScale',50,200,s.lifeScale,'%')
-          + slider('Timer size','timerScale',50,200,s.timerScale,'%')
-          + slider('Number glow','glow',0,100,s.glowStrength,'%')
-          + slider('Color bleed','bleed',0,200,s.colorBleed,'%')
-          + slider('Commander damage size','cdScale',70,200,s.cdScale,'%')
-          + slider('Player 5 row height','solo',50,150,s.soloScale,'%')
-          + slider('Menu see-through','advOpacity',0,90,s.advOpacity,'%')
-          + '</div>';
+          + '<button data-act="lifeUp" style="width:38px;height:38px;border-radius:12px;border:1px solid rgba(255,255,255,.15);background:transparent;color:#fff;font-size:18px">+</button></div></div>';
+        var ctrls = [ lifeRow,
+          slider('Hide change after','deltaFade',1,60,Math.round(s.deltaFadeMs/1000),' s'),
+          slider('Life number size','lifeScale',50,200,s.lifeScale,'%'),
+          slider('Timer size','timerScale',50,200,s.timerScale,'%'),
+          slider('Number glow','glow',0,100,s.glowStrength,'%'),
+          slider('Color bleed','bleed',0,200,s.colorBleed,'%'),
+          slider('Commander damage size','cdScale',70,200,s.cdScale,'%'),
+          slider('Player 5 row height','solo',50,150,s.soloScale,'%'),
+          slider('Menu see-through','advOpacity',0,90,s.advOpacity,'%') ];
+        var advBody = ctrls.map(function(c,ci){ return '<div style="flex:1;display:flex;flex-direction:column;justify-content:center'+(ci?';border-top:1px solid rgba(255,255,255,.06)':'')+'">'+c+'</div>'; }).join('');
+        return '<div id="advpanel" style="position:fixed;inset:0;z-index:41;background:#060709;opacity:'+sheetOp+';color:#fff;display:flex;flex-direction:column;padding:calc(env(safe-area-inset-top) + 14px) 18px calc(env(safe-area-inset-bottom) + 16px)">'
+          + '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;flex:none"><div style="font-size:17px;font-weight:800">Advanced settings</div>'
+          + '<button data-act="toggleAdv" style="padding:8px 18px;border-radius:12px;border:1px solid rgba(255,255,255,.2);background:rgba(255,255,255,.06);color:#fff;font-size:14px;font-weight:700;font-family:inherit">Done</button></div>'
+          + '<div style="flex:1;display:flex;flex-direction:column;min-height:0">'+advBody+'</div></div>';
       }
 
       var resetLabel = s.confirmReset ? 'Tap again to confirm reset' : 'Reset game';
       var resetBg = s.confirmReset ? 'rgba(255,91,91,.18)' : 'transparent';
       var resetBorder = s.confirmReset ? 'rgba(255,91,91,.7)' : 'rgba(255,255,255,.15)';
       var resetFg = s.confirmReset ? '#ff7a7a' : 'rgba(255,255,255,.8)';
+
+      var hashRow = '<div style="display:flex;flex-direction:column;gap:6px">'
+        + '<div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">SETTINGS CODE</div>'
+        + '<input data-act="hash" value="'+this.settingsHash()+'" spellcheck="false" autocapitalize="off" autocorrect="off" autocomplete="off" inputmode="latin" style="width:100%;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.12);border-radius:10px;padding:10px 12px;font-size:13px;color:#fff;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;letter-spacing:.1em;outline:none">'
+        + '<div style="font-size:11px;color:rgba(255,255,255,.4)">Shareable code of all settings — paste one and press Enter to apply.</div></div>';
 
       return '<div style="position:fixed;inset:0;z-index:40">'
         + '<div data-act="closeSettings" id="scrim" style="position:absolute;inset:0;background:rgba(0,0,0,'+scrimA+')"></div>'
@@ -713,12 +722,48 @@
         + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Turn timer</div>'
         + '<button data-act="toggleTimer" style="width:56px;height:32px;border-radius:999px;border:0;background:'+(s.timerEnabled?'#2d7bff':'rgba(255,255,255,.15)')+';position:relative;flex:none"><span style="position:absolute;top:3px;left:'+(s.timerEnabled?27:3)+'px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .18s"></span></button></div>'
         + (this.isStandalone() ? '' : '<button data-act="install" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span style="font-size:16px">⤓</span><span>Install app</span></button>')
-        + '<button data-act="toggleAdv" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span>Advanced settings</span><span style="color:rgba(255,255,255,.5);font-size:12px">'+(s.advOpen?'▲':'▼')+'</span></button>'
-        + adv
+        + '<button data-act="toggleAdv" style="display:flex;align-items:center;justify-content:space-between;padding:12px 14px;border-radius:14px;border:1px solid rgba(255,255,255,.12);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span>Advanced settings</span><span style="color:rgba(255,255,255,.5);font-size:12px">▸</span></button>'
+        + hashRow
         + '<button data-act="viewStats" style="padding:14px;border-radius:14px;border:1px solid rgba(45,123,255,.5);background:rgba(45,123,255,.12);color:#7db8ff;font-size:15px;font-weight:700;font-family:inherit">View match stats</button>'
         + '<button data-act="resetGame" style="padding:14px;border-radius:14px;border:1px solid '+resetBorder+';background:'+resetBg+';color:'+resetFg+';font-size:15px;font-weight:700;font-family:inherit">'+resetLabel+'</button>'
         + '<button data-act="closeSettings" style="padding:14px;border-radius:14px;border:0;background:#2d7bff;color:#fff;font-size:15px;font-weight:700;font-family:inherit">Done</button>'
         + '</div></div>';
+    },
+    // encode all tunable settings into a compact hex code
+    settingsHash: function(){
+      var s = this.state;
+      var bytes = [1, s.count, s.startingLife,
+        (s.timerEnabled?1:0)|(s.direction===1?2:0),
+        Math.round(s.deltaFadeMs/1000),
+        s.lifeScale, s.timerScale, s.glowStrength, s.colorBleed, s.cdScale, s.soloScale, s.advOpacity];
+      return bytes.map(function(b){ return ('0'+((b|0)&255).toString(16)).slice(-2); }).join('');
+    },
+    applyHash: function(str){
+      var hex = (str||'').trim().replace(/[^0-9a-fA-F]/g,'');
+      if(hex.length < 24) return false;
+      var b = []; for(var k=0;k<12;k++) b.push(parseInt(hex.substr(k*2,2),16));
+      if(b[0]!==1) return false;
+      var clamp = function(v,lo,hi){ v=v|0; return Math.max(lo,Math.min(hi,v)); };
+      var count = clamp(b[1],2,6);
+      var patch = {
+        startingLife: clamp(b[2],10,100), deltaFadeMs: clamp(b[4],1,60)*1000,
+        lifeScale: clamp(b[5],50,200), timerScale: clamp(b[6],50,200),
+        glowStrength: clamp(b[7],0,100), colorBleed: clamp(b[8],0,200),
+        cdScale: clamp(b[9],70,200), soloScale: clamp(b[10],50,150), advOpacity: clamp(b[11],0,90),
+        direction: (b[3]&2)?1:-1, timerEnabled: !!(b[3]&1)
+      };
+      var wasTe = this.state.timerEnabled;
+      if(count !== this.state.count){
+        var next = this.fresh(count); Object.assign(next, patch, { settingsOpen:true });
+        this.state = next; this.save(); this.paint();
+        if(next.phase==='rolling' && next.timerEnabled) this.startRoll();
+        return true;
+      }
+      Object.assign(this.state, patch);
+      if(patch.timerEnabled && !wasTe){ this.state.phase='playing'; if(this.state.active<0) this.state.active=0; this.state.turnAccum=0; this.state.turnResume=Date.now(); this.state.startedAt=this.state.startedAt||Date.now(); }
+      if(!patch.timerEnabled && wasTe){ this.state.active=-1; this.state.paused=false; this.state.turnResume=null; }
+      this.save(); this.paint();
+      return true;
     },
     statsHTML: function(){
       var s = this.state, self = this;
@@ -842,9 +887,10 @@
         case 'solo': s.soloScale = val; break;
         case 'advOpacity':
           s.advOpacity = val;
-          var op = Math.max(0.1, 1-val/100), sheet=document.getElementById('sheet'), scrim=document.getElementById('scrim');
+          var op = Math.max(0.1, 1-val/100), sheet=document.getElementById('sheet'), scrim=document.getElementById('scrim'), advp=document.getElementById('advpanel');
           if(sheet) sheet.style.opacity = op;
           if(scrim) scrim.style.background = 'rgba(0,0,0,'+(0.55*op).toFixed(3)+')';
+          if(advp) advp.style.opacity = op;
           break;
       }
       if(lbl) lbl.textContent = txt+suffix;
@@ -867,6 +913,10 @@
       ov.addEventListener('click', function(e){ App.onOverlayClick(e); });
       ov.addEventListener('change', function(e){ App.onOverlayChange(e); });
       ov.addEventListener('input', function(e){ App.onOverlayInput(e); });
+      ov.addEventListener('keydown', function(e){
+        var el = e.target.closest && e.target.closest('[data-act="hash"]');
+        if(el && (e.key==='Enter' || e.keyCode===13)){ e.preventDefault(); el.blur(); App.applyHash(el.value); }
+      });
 
       window.addEventListener('pointermove', function(e){ if(App.press) App.boxMove(e); if(App.bar) App.barMove(e); });
       window.addEventListener('pointerup', function(){ if(App.press) App.boxUp(); else if(App.bar) App.barUp(); });
