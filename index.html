@@ -187,29 +187,37 @@
     },
 
     // ---------- life / elimination ----------
-    isDead: function(i){ return this.state.elims.some(function(e){ return e.i===i; }); },
+    // A player is dead only while their current life is <= 0; heal them above 0
+    // and they are alive again.
+    isDead: function(i){ return this.state.life[i] <= 0; },
+    lastElim: function(i){ var r=null; this.state.elims.forEach(function(e){ if(e.i===i) r=e; }); return r; },
     changeLife: function(i, d){
       var s = this.state;
       if(s.phase!=='playing') return;
+      var wasDead = s.life[i] <= 0;
       var life = s.life.slice(); life[i] += d;
       var lifeMin = s.lifeMin.slice();
       var lifeMax = s.lifeMax.slice(); lifeMax[i] = Math.max(lifeMax[i], life[i]);
-      var cmd = s.cmd;
+      var cmd = s.cmd, prevCmd = 0, curCmd = 0;
       if(s.dealing>=0 && s.dealing!==i){
         cmd = s.cmd.map(function(r){ return r.slice(); });
+        prevCmd = cmd[s.dealing][i];
         cmd[s.dealing][i] = Math.max(0, cmd[s.dealing][i] - d);
+        curCmd = cmd[s.dealing][i];
       }
       var deltas = s.deltas.slice(), now = Date.now();
       var prevSum = deltas[i] && deltas[i].until > now ? deltas[i].sum : 0;
       deltas[i] = { sum: prevSum + d, until: now + s.deltaFadeMs };
-      var elims = s.elims.slice();
-      var lethalCd = -1;
-      for(var k=0;k<cmd.length;k++){ if(k!==i && cmd[k][i]>=21){ lethalCd = k; break; } }
-      if(lethalCd>=0 && life[i]>0) life[i] = 0;
+      // a commander-damage blow that first pushes one dealer's total to >=21 is
+      // lethal: drop the victim to 0 once (they can still be healed back after).
+      if(s.dealing>=0 && s.dealing!==i && prevCmd < 21 && curCmd >= 21 && life[i] > 0) life[i] = 0;
       lifeMin[i] = Math.min(lifeMin[i], life[i]);
-      if(!this.isDead(i)){
-        if(lethalCd>=0) elims.push({ i:i, by:lethalCd, how:'cmd', order:elims.length });
-        else if(life[i]<=0) elims.push({ i:i, by: s.dealing>=0?s.dealing:-1, how:'life', order:elims.length });
+      // log a death event (for the stats screen) each time a player crosses into death
+      var elims = s.elims.slice();
+      if(life[i] <= 0 && !wasDead){
+        var by = -1;
+        for(var k=0;k<cmd.length;k++){ if(k!==i && cmd[k][i]>=21){ by=k; break; } }
+        elims.push({ i:i, by: by>=0?by:(s.dealing>=0?s.dealing:-1), how: by>=0?'cmd':'life', order: elims.length });
       }
       this.set({ life:life, lifeMin:lifeMin, lifeMax:lifeMax, cmd:cmd, deltas:deltas, elims:elims });
       if(navigator.vibrate){ try{ navigator.vibrate(7); }catch(e){} }
@@ -473,7 +481,7 @@
       var s = this.state, alive = [], dead = [], self = this;
       for(var i=0;i<s.count;i++) (this.isDead(i)?dead:alive).push(i);
       alive.sort(function(a,b){ return s.life[b]-s.life[a]; });
-      dead.sort(function(a,b){ var ea=s.elims.find(function(e){return e.i===a;}), eb=s.elims.find(function(e){return e.i===b;}); return eb.order-ea.order; });
+      dead.sort(function(a,b){ var ea=self.lastElim(a), eb=self.lastElim(b); return (eb?eb.order:0)-(ea?ea.order:0); });
       return alive.concat(dead);
     },
     ord: function(n){ return n===1?'1st':n===2?'2nd':n===3?'3rd':n+'th'; },
@@ -482,7 +490,7 @@
       var dur = s.endedAt && s.startedAt ? this.clk(s.endedAt-s.startedAt) : '00:00';
       var out = 'Commander match — '+dur+' total, '+s.count+' players\n';
       rank.forEach(function(i, r){
-        var e = s.elims.find(function(x){ return x.i===i; });
+        var e = self.isDead(i) ? self.lastElim(i) : null;
         out += self.ord(r+1)+' '+s.players[i].name+' — life '+s.life[i]+
           (e ? (e.how==='cmd' ? ' (lethal cmd dmg from '+(e.by>=0?s.players[e.by].name:'?')+')' : ' (eliminated)') : '')+
           ', '+self.clk(s.totals[i])+' on clock\n';
@@ -804,7 +812,8 @@
       var rank = this.ranking();
       var wI = rank[0]!=null?rank[0]:0, wP = s.players[wI]||s.players[0];
       var totalTime = s.endedAt && s.startedAt ? this.clk(s.endedAt-s.startedAt) : '00:00';
-      var winnerTitle = s.elims.length >= s.count-1 ? 'WINNER · LAST STANDING' : 'LEADER · HIGHEST LIFE';
+      var deadNow = 0; for(var di=0; di<s.count; di++){ if(this.isDead(di)) deadNow++; }
+      var winnerTitle = deadNow >= s.count-1 ? 'WINNER · LAST STANDING' : 'LEADER · HIGHEST LIFE';
       var html = '<div style="position:fixed;inset:0;z-index:50;background:#060709;display:flex;flex-direction:column;padding:22px 16px 18px;gap:12px;overflow:auto;color:#fff">';
       html += '<div style="text-align:center;margin-bottom:2px"><div style="font-size:12px;letter-spacing:.2em;color:rgba(255,255,255,.45);font-weight:600">MATCH SUMMARY</div>'
         + '<div style="font-size:40px;font-weight:800;color:#fff;margin-top:8px;letter-spacing:.02em">'+totalTime+'</div>'
@@ -816,7 +825,7 @@
         + '<div style="font-size:52px;font-weight:800;color:'+this.lighten(wP.color)+'">'+s.life[wI]+'</div></div>';
       html += '<div style="display:flex;flex-direction:column;gap:10px">';
       rank.slice(1).forEach(function(i, r){
-        var p = s.players[i], e = s.elims.find(function(x){ return x.i===i; });
+        var p = s.players[i], e = self.isDead(i) ? self.lastElim(i) : null;
         var dealt = s.cmd[i].reduce(function(a,c){ return a+c; }, 0);
         var rankNote = self.ord(r+2) + (e ? (e.how==='cmd' ? ' · lethal ⚔ from '+(e.by>=0?esc(s.players[e.by].name):'?') : (e.by>=0?' · out by '+esc(s.players[e.by].name):' · eliminated')) : '');
         var borderC = e && e.how==='cmd' ? 'rgba(255,91,91,.3)' : 'rgba(255,255,255,.09)';
