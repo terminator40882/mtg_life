@@ -104,6 +104,7 @@
         advOpacity: prev.advOpacity != null ? prev.advOpacity : 37,
         colorBleed: prev.colorBleed != null ? prev.colorBleed : 55,
         advOpen: false,
+        three2: prev.three2 != null ? prev.three2 : false,   // 3p: 2 players on one long edge, 1 on the other
         onlineColors: prev.onlineColors || {},   // last-synced online colour per name (to detect changes)
         settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', installHelp:false,
         rollIdx:-1
@@ -111,7 +112,7 @@
     },
     save: function(){
       var s = this.state, out = {};
-      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','numWhite','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity','onlineColors'].forEach(function(k){ out[k]=s[k]; });
+      ['phase','count','direction','startingLife','players','roster','life','lifeMin','lifeMax','totals','turns','longest','cmd','elims','active','paused','startedAt','endedAt','dealing','timerEnabled','glowStrength','numWhite','cdScale','colorBleed','deltaFadeMs','lifeScale','timerScale','soloScale','advOpacity','three2','onlineColors'].forEach(function(k){ out[k]=s[k]; });
       out.turnAccum = this.curTurnMs();
       out.turnResume = s.turnResume ? Date.now() : null;
       try{ localStorage.setItem(KEY, JSON.stringify(out)); }catch(e){}
@@ -510,7 +511,6 @@
     // ---------- render values ----------
     renderVals: function(){
       var s = this.state, self = this;
-      var L = this.layout(s.count);
       var barVisible = s.timerEnabled && s.phase!=='stats';
       var tsc = s.timerScale/100;
       var barHpx = Math.round(96*tsc);
@@ -521,6 +521,40 @@
       var vh = (appEl && appEl.clientHeight) || window.innerHeight || 824;
       var gap = Math.round(Math.max(6, Math.min(12, Math.min(vw,vh)*0.016)));
       this._gap = gap;
+      var activeColor = s.active>=0 && s.active<s.count ? s.players[s.active].color : '#3a3f47';
+      var turnMs = s.phase==='playing' && s.active>=0 ? this.curTurnMs() : 0;
+      var bankMs = s.active>=0 ? s.totals[s.active]+turnMs : 0;
+      var t = this.mmss(turnMs), b = this.mmss(bankMs);
+      var clockV = {
+        gapPx: gap+'px',
+        timerDisabled: !s.timerEnabled && s.phase!=='stats',
+        isRolling: s.phase==='rolling',
+        barBg: s.paused ? 'rgba(60,16,18,.85)' : 'rgba(16,18,22,.82)',
+        barBorder: s.paused ? 'rgba(255,91,91,.6)' : this.rgba(activeColor,0.5),
+        clockInset: Math.round(66*tsc),
+        clockBig: Math.round(40*tsc), clockMid: Math.round(32*tsc), clockSm: Math.round(19*tsc), clockSm2: Math.round(17*tsc),
+        clockColor: s.paused ? '#ff9d9d' : '#fff',
+        tMM:t[0], tSS:t[1], bMM:b[0], bSS:b[1],
+        paused: s.paused,
+        dotColor: this.rgba(activeColor,0.9)
+      };
+
+      // ---- 3-player "2 on one long edge, 1 on the other" (two columns) ----
+      if(s.count===3 && s.three2){
+        var timerOn = barVisible;
+        var barW = timerOn ? Math.min(Math.round(vw*0.34), Math.round(120*tsc)) : 0;
+        var colsTotal = vw - 2*gap - (timerOn ? (barW + 2*gap) : gap);
+        var colW = Math.max(60, Math.floor(colsTotal/2));
+        var colH = vh - 2*gap;
+        var leftBoxH = Math.floor((colH - gap)/2);
+        this._numCap = Math.min(colW, leftBoxH)*0.86;
+        var b0 = this.makeBox({i:0,rot:90},  'top',    colW, leftBoxH, 0, 2);   // left, upper
+        var b1 = this.makeBox({i:1,rot:90},  'bottom', colW, leftBoxH, 0, 2);   // left, lower
+        var b2 = this.makeBox({i:2,rot:-90}, 'top',    colW, colH,     1, 2);   // right, full height
+        return Object.assign({ twoCol:true, timerOn:timerOn, barW:barW, leftBoxes:[b0,b1], rightBox:b2 }, clockV);
+      }
+
+      var L = this.layout(s.count);
       var allRows = L.top.concat(L.bottom);
       var childCount = allRows.length + (barVisible?1:0);
       var availH = Math.max(160, vh - 2*gap - (childCount-1)*gap - (barVisible?barHpx:0));
@@ -538,47 +572,40 @@
       if(barVisible) rows.push({ isBar:true, grow:0 });
       L.bottom.forEach(function(r, ri){ rows.push({ isBar:false, grow:growFor(r), boxes:mkRow(r,'bottom') }); });
 
-      var activeColor = s.active>=0 && s.active<s.count ? s.players[s.active].color : '#3a3f47';
-      var turnMs = s.phase==='playing' && s.active>=0 ? this.curTurnMs() : 0;
-      var bankMs = s.active>=0 ? s.totals[s.active]+turnMs : 0;
-      var t = this.mmss(turnMs), b = this.mmss(bankMs);
-
-      return {
+      return Object.assign({
         rows: rows,
-        gapPx: gap+'px',
-        timerDisabled: !s.timerEnabled && s.phase!=='stats',
         boundaryPct: Math.round((L.top.length*rowH + (L.top.length+0.5)*gap)/vh*100),
-        isRolling: s.phase==='rolling',
-        barH: barHpx,
-        barBg: s.paused ? 'rgba(60,16,18,.85)' : 'rgba(16,18,22,.82)',
-        barBorder: s.paused ? 'rgba(255,91,91,.6)' : this.rgba(activeColor,0.5),
-        clockInset: Math.round(66*tsc),
-        clockBig: Math.round(40*tsc), clockMid: Math.round(32*tsc), clockSm: Math.round(19*tsc), clockSm2: Math.round(17*tsc),
-        clockColor: s.paused ? '#ff9d9d' : '#fff',
-        tMM:t[0], tSS:t[1], bMM:b[0], bSS:b[1],
-        paused: s.paused,
-        dotColor: this.rgba(activeColor,0.9)
-      };
+        barH: barHpx
+      }, clockV);
     },
 
     // ---------- painting ----------
     paint: function(){ this.paintBoard(); this.paintOverlay(); },
 
+    menuBtnHTML: function(topPct){
+      return '<div style="position:absolute;left:50%;top:'+topPct+'%;transform:translate(-50%,-50%);z-index:20">'
+        + '<div data-act="openSettings" style="width:40px;height:40px;border-radius:50%;background:rgba(10,11,14,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4)">≡</div></div>';
+    },
     paintBoard: function(){
       var s = this.state, V = this.renderVals();
       var board = document.getElementById('board');
-      board.style.cssText = 'position:absolute;inset:0;background:#060709;display:flex;flex-direction:column;gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
+      var dir = V.twoCol ? 'row' : 'column';
+      board.style.cssText = 'position:absolute;inset:0;background:#060709;display:flex;flex-direction:'+dir+';gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
       if(s.phase==='stats'){ board.innerHTML=''; return; }
       var html = '';
-      V.rows.forEach(function(row){
-        if(row.isBar){ html += App.barHTML(V); return; }
-        html += '<div style="display:flex;gap:'+V.gapPx+';justify-content:center;min-height:0;flex-grow:'+row.grow+';flex-basis:0;position:relative">';
-        row.boxes.forEach(function(box){ html += App.boxHTML(box); });
-        html += '</div>';
-      });
-      if(V.timerDisabled){
-        html += '<div style="position:absolute;left:50%;top:'+V.boundaryPct+'%;transform:translate(-50%,-50%);z-index:20">'
-          + '<div data-act="openSettings" style="width:40px;height:40px;border-radius:50%;background:rgba(10,11,14,.55);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.18);display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,.55);font-size:16px;box-shadow:0 4px 14px rgba(0,0,0,.4)">≡</div></div>';
+      if(V.twoCol){
+        html += '<div style="display:flex;flex-direction:column;gap:'+V.gapPx+';flex:1;min-width:0;min-height:0">'+App.boxHTML(V.leftBoxes[0])+App.boxHTML(V.leftBoxes[1])+'</div>';
+        if(V.timerOn) html += App.barVHTML(V);
+        html += '<div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0">'+App.boxHTML(V.rightBox)+'</div>';
+        if(V.timerDisabled) html += this.menuBtnHTML(50);
+      } else {
+        V.rows.forEach(function(row){
+          if(row.isBar){ html += App.barHTML(V); return; }
+          html += '<div style="display:flex;gap:'+V.gapPx+';justify-content:center;min-height:0;flex-grow:'+row.grow+';flex-basis:0;position:relative">';
+          row.boxes.forEach(function(box){ html += App.boxHTML(box); });
+          html += '</div>';
+        });
+        if(V.timerDisabled) html += this.menuBtnHTML(V.boundaryPct);
       }
       board.innerHTML = html;
       this.wireBoard();
@@ -624,6 +651,21 @@
       if(V.paused) h += '<div style="font-size:13px;font-weight:700;letter-spacing:.22em;color:#ff7a7a;pointer-events:none;animation:obpulse 1.6s ease infinite">PAUSED</div>';
       else h += '<div style="width:8px;height:8px;border-radius:50%;background:'+V.dotColor+';box-shadow:0 0 14px '+V.dotColor+';pointer-events:none"></div>';
       if(V.isRolling) h += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:rgba(6,7,9,.75);pointer-events:none"><div style="font-size:12px;font-weight:700;letter-spacing:.24em;color:rgba(255,255,255,.75)">ROLLING… TAP TO SKIP</div></div>';
+      h += '</div>';
+      return h;
+    },
+    // vertical timer bar (2-column 3p layout): two clock copies rotated to face the
+    // left column (+90) and the single right player (-90)
+    barVHTML: function(V){
+      var clockStack = '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1;pointer-events:none">'
+        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockBig+'px;font-weight:800;color:'+V.clockColor+'">'+V.tMM+'</span><span style="font-size:'+V.clockMid+'px;font-weight:800;color:rgba(255,255,255,.55)">'+V.tSS+'</span></div>'
+        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockSm+'px;font-weight:700;color:rgba(255,255,255,.45)">'+V.bMM+'</span><span style="font-size:'+V.clockSm2+'px;font-weight:700;color:rgba(255,255,255,.38)">'+V.bSS+'</span></div></div>';
+      var h = '<div id="bar" style="flex:none;width:'+V.barW+'px;align-self:stretch;border-radius:20px;background:'+V.barBg+';border:1px solid '+V.barBorder+';position:relative;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);touch-action:none;overflow:hidden">';
+      h += '<div style="position:absolute;left:50%;top:'+V.clockInset+'px;transform:translate(-50%,-50%) rotate(90deg)">'+clockStack+'</div>';
+      h += '<div style="position:absolute;left:50%;bottom:'+V.clockInset+'px;transform:translate(-50%,50%) rotate(-90deg)">'+clockStack+'</div>';
+      if(V.paused) h += '<div style="font-size:13px;font-weight:700;letter-spacing:.22em;color:#ff7a7a;pointer-events:none;animation:obpulse 1.6s ease infinite;transform:rotate(90deg)">PAUSED</div>';
+      else h += '<div style="width:8px;height:8px;border-radius:50%;background:'+V.dotColor+';box-shadow:0 0 14px '+V.dotColor+';pointer-events:none"></div>';
+      if(V.isRolling) h += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:rgba(6,7,9,.75);pointer-events:none"><div style="font-size:12px;font-weight:700;letter-spacing:.2em;color:rgba(255,255,255,.75);transform:rotate(90deg)">ROLLING…</div></div>';
       h += '</div>';
       return h;
     },
@@ -711,6 +753,15 @@
         var bd = n===s.count ? 'rgba(45,123,255,.7)' : 'rgba(255,255,255,.12)';
         countOpts += '<button data-act="setCount" data-n="'+n+'" style="flex:1;padding:10px 0;border-radius:12px;border:1px solid '+bd+';background:'+bg+';color:#fff;font-size:16px;font-weight:700;font-family:inherit">'+n+'</button>';
       });
+      // 3-player seating choice (only when 3 players)
+      var seatRow = '';
+      if(s.count===3){
+        var seg = function(label, v, on){
+          return '<button data-act="three2" data-v="'+v+'" style="flex:1;padding:10px 6px;border-radius:12px;border:1px solid '+(on?'rgba(45,123,255,.7)':'rgba(255,255,255,.12)')+';background:'+(on?'rgba(45,123,255,.2)':'rgba(255,255,255,.04)')+';color:#fff;font-size:14px;font-weight:700;font-family:inherit">'+label+'</button>';
+        };
+        seatRow = '<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">3-PLAYER SEATING</div>'
+          + '<div style="display:flex;gap:8px">'+seg('Standard',0,!s.three2)+seg('2 on a side',1,!!s.three2)+'</div></div>';
+      }
 
       var slider = function(label, key, min, max, val, suffix){
         return '<div style="display:flex;flex-direction:column;gap:8px">'
@@ -758,6 +809,7 @@
         + '<div style="width:40px;height:4px;border-radius:2px;background:rgba(255,255,255,.25);margin:0 auto"></div>'
         + '<div style="display:flex;flex-direction:column;gap:10px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">PLAYERS · SEATING LAYOUT</div><div style="display:flex;flex-direction:column;gap:8px">'+playerCards+'</div></div>'
         + '<div style="display:flex;flex-direction:column;gap:8px"><div style="font-size:11px;font-weight:700;letter-spacing:.18em;color:rgba(255,255,255,.45)">PLAYER COUNT</div><div style="display:flex;gap:8px">'+countOpts+'</div></div>'
+        + seatRow
         + '<div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div style="font-size:15px;font-weight:600">Turn timer</div>'
         + '<button data-act="toggleTimer" style="width:56px;height:32px;border-radius:999px;border:0;background:'+(s.timerEnabled?'#2d7bff':'rgba(255,255,255,.15)')+';position:relative;flex:none"><span style="position:absolute;top:3px;left:'+(s.timerEnabled?27:3)+'px;width:26px;height:26px;border-radius:50%;background:#fff;transition:left .18s"></span></button></div>'
         + (this.isStandalone() ? '' : '<button data-act="install" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:13px;border-radius:14px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.04);color:#fff;font-size:15px;font-weight:600;font-family:inherit"><span style="font-size:16px">⤓</span><span>Install app</span></button>')
@@ -881,6 +933,7 @@
         case 'pickColor': this.setPlayerColor(i, el.getAttribute('data-c')); break;
         case 'confirmAdd': this.confirmAddName(i); break;
         case 'setCount': this.setCount(+el.getAttribute('data-n')); break;
+        case 'three2': this.set({ three2: el.getAttribute('data-v')==='1' }); break;
         case 'toggleTimer':
           if(s.timerEnabled) this.set({ timerEnabled:false, active:-1, paused:false, phase: s.phase==='rolling'?'playing':s.phase, rollIdx:-1 }, function(){ if(App.rollTimer){ clearTimeout(App.rollTimer); App.rollTimer=null; } if(App.rollRaf){ cancelAnimationFrame(App.rollRaf); App.rollRaf=null; } });
           else this.set({ timerEnabled:true, phase:'playing', active:0, turnAccum:0, turnResume:Date.now(), startedAt:s.startedAt||Date.now() });
