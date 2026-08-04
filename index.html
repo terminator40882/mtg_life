@@ -48,7 +48,7 @@
   var PAL = ['#C0392B','#2471C7','#1E9E54','#D4A017','#8E44AD','#16A085','#7F8C8D','#E4568B','#E67E22','#3BA7DB','#ECECEC','#2D6A4F'];
   var KEY = 'cmdr-obsidian-proto-v4';
   var BOX_RADIUS = 20;
-  var DEFAULT_CODE = '010528000578643137913d2514';   // built-in fallback default settings code
+  var DEFAULT_CODE = '01052800057864313791642514';   // built-in fallback default settings code
   var CONFIG_URL = 'config.json';                     // online source of player colours + default code
   var reduceMotion = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 
@@ -58,7 +58,7 @@
     state: null,
     press: null, bar: null, rollTimer: null, rollRaf: null, rollTarget: null,
     lastTap: 0, passTimer: null, tick: null,
-    _gap: 6, _numCap: 1e9,
+    _gap: 6,
     onlineDefaultCode: null,
 
     // ---------- roster / fresh / persistence ----------
@@ -100,7 +100,7 @@
         glowStrength: prev.glowStrength != null ? prev.glowStrength : 49,
         numWhite: prev.numWhite != null ? prev.numWhite : 20,
         cdScale: prev.cdScale != null ? prev.cdScale : 145,
-        soloScale: prev.soloScale != null ? prev.soloScale : 61,
+        soloScale: prev.soloScale != null ? prev.soloScale : 100,
         advOpacity: prev.advOpacity != null ? prev.advOpacity : 37,
         colorBleed: prev.colorBleed != null ? prev.colorBleed : 55,
         advOpen: false,
@@ -365,7 +365,8 @@
       var scale = s.lifeScale/100;
       var cs = (s.cdScale!=null?s.cdScale:140)/100;
       var showCd = p.cd && s.dealing<0;
-      var numSize = Math.round(Math.min(116*scale, this._numCap||1e9));
+      var numCap = Math.min(w, h) * 0.86;   // cap number to this box's own smaller side
+      var numSize = Math.round(Math.min(116*scale, numCap));
       var nOpp = Math.max(1, s.count-1);
       var margin = 8, edgeSafety = 4, MIN_OK = 22;
       var digits = Math.max(2, String(Math.abs(s.life[i])).length);
@@ -540,18 +541,19 @@
       };
 
       // ---- 3-player "2 on one long edge, 1 on the other" (two columns) ----
+      // The timer sits as a thin strip flush at the TOP short edge (not a vertical
+      // bar between the columns), so both columns keep full width and the boxes get
+      // sensible aspect ratios.
       if(s.count===3 && s.three2){
         var timerOn = barVisible;
-        var barW = timerOn ? Math.min(Math.round(vw*0.34), Math.round(120*tsc)) : 0;
-        var colsTotal = vw - 2*gap - (timerOn ? (barW + 2*gap) : gap);
-        var colW = Math.max(60, Math.floor(colsTotal/2));
-        var colH = vh - 2*gap;
+        var stripH = timerOn ? Math.round(76*tsc) : 0;
+        var colH = vh - 2*gap - (timerOn ? (stripH + gap) : 0);
+        var colW = Math.max(60, Math.floor((vw - 2*gap - gap)/2));
         var leftBoxH = Math.floor((colH - gap)/2);
-        this._numCap = Math.min(colW, leftBoxH)*0.86;
-        var b0 = this.makeBox({i:0,rot:90},  'top',    colW, leftBoxH, 0, 2);   // left, upper
-        var b1 = this.makeBox({i:1,rot:90},  'bottom', colW, leftBoxH, 0, 2);   // left, lower
-        var b2 = this.makeBox({i:2,rot:-90}, 'top',    colW, colH,     1, 2);   // right, full height
-        return Object.assign({ twoCol:true, timerOn:timerOn, barW:barW, leftBoxes:[b0,b1], rightBox:b2 }, clockV);
+        var b0 = this.makeBox({i:0,rot:90},  'top',    colW, leftBoxH, 0, 2);   // left column, upper
+        var b1 = this.makeBox({i:1,rot:90},  'bottom', colW, leftBoxH, 0, 2);   // left column, lower
+        var b2 = this.makeBox({i:2,rot:-90}, 'top',    colW, colH,     1, 2);   // right column, full height
+        return Object.assign({ twoCol:true, timerOn:timerOn, barH:stripH, leftBoxes:[b0,b1], rightBox:b2 }, clockV);
       }
 
       var L = this.layout(s.count);
@@ -561,20 +563,24 @@
       var stdCols = s.count===2 ? 1 : 2;
       var stdW = (vw - 2*gap - (stdCols-1)*gap)/stdCols;
       var soloSc = (s.soloScale!=null?s.soloScale:100)/100;
-      var growFor = function(r){ return r.length < stdCols ? soloSc : 1; };
+      // Aspect-aware row weights: in 3p shrink the side-facing pair so the lone
+      // full-width player can grow (keeps both near square). Lone rows otherwise
+      // take an equal share; soloSc lets the user fine-tune the lone panel.
+      var pairW = s.count===3 ? 0.72 : 1;
+      var growFor = function(r){ return r.length < stdCols ? soloSc : pairW; };
       var totalGrow = allRows.reduce(function(a,r){ return a+growFor(r); }, 0);
-      var rowH = availH/totalGrow;
-      this._numCap = Math.min(stdW, rowH)*0.86;
+      var unit = availH/totalGrow;   // rendered height of one grow-unit
       var fullW = vw - 2*gap;
-      var mkRow = function(r, block){ return r.map(function(seat, idx){ return self.makeBox(seat, block, r.length<stdCols?fullW:stdW, rowH*growFor(r), idx, r.length); }); };
+      var mkRow = function(r, block){ return r.map(function(seat, idx){ return self.makeBox(seat, block, r.length<stdCols?fullW:stdW, unit*growFor(r), idx, r.length); }); };
       var rows = [];
       L.top.forEach(function(r, ri){ rows.push({ isBar:false, grow:growFor(r), boxes:mkRow(r,'top') }); });
       if(barVisible) rows.push({ isBar:true, grow:0 });
       L.bottom.forEach(function(r, ri){ rows.push({ isBar:false, grow:growFor(r), boxes:mkRow(r,'bottom') }); });
 
+      var topGrow = L.top.reduce(function(a,r){ return a+growFor(r); }, 0);
       return Object.assign({
         rows: rows,
-        boundaryPct: Math.round((L.top.length*rowH + (L.top.length+0.5)*gap)/vh*100),
+        boundaryPct: Math.round((topGrow*unit + (L.top.length+0.5)*gap)/vh*100),
         barH: barHpx
       }, clockV);
     },
@@ -589,14 +595,16 @@
     paintBoard: function(){
       var s = this.state, V = this.renderVals();
       var board = document.getElementById('board');
-      var dir = V.twoCol ? 'row' : 'column';
-      board.style.cssText = 'position:absolute;inset:0;background:#060709;display:flex;flex-direction:'+dir+';gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
+      board.style.cssText = 'position:absolute;inset:0;background:#060709;display:flex;flex-direction:column;gap:'+V.gapPx+';padding:'+V.gapPx+';font-family:inherit;font-variant-numeric:tabular-nums';
       if(s.phase==='stats'){ board.innerHTML=''; return; }
       var html = '';
       if(V.twoCol){
-        html += '<div style="display:flex;flex-direction:column;gap:'+V.gapPx+';flex:1;min-width:0;min-height:0">'+App.boxHTML(V.leftBoxes[0])+App.boxHTML(V.leftBoxes[1])+'</div>';
-        if(V.timerOn) html += App.barVHTML(V);
-        html += '<div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0">'+App.boxHTML(V.rightBox)+'</div>';
+        // timer as a thin strip flush at the top short edge; columns fill the rest
+        if(V.timerOn) html += App.barHTML(V);
+        html += '<div style="display:flex;flex-direction:row;gap:'+V.gapPx+';flex:1;min-width:0;min-height:0">'
+             +   '<div style="display:flex;flex-direction:column;gap:'+V.gapPx+';flex:1;min-width:0;min-height:0">'+App.boxHTML(V.leftBoxes[0])+App.boxHTML(V.leftBoxes[1])+'</div>'
+             +   '<div style="display:flex;flex-direction:column;flex:1;min-width:0;min-height:0">'+App.boxHTML(V.rightBox)+'</div>'
+             + '</div>';
         if(V.timerDisabled) html += this.menuBtnHTML(50);
       } else {
         V.rows.forEach(function(row){
@@ -651,21 +659,6 @@
       if(V.paused) h += '<div style="font-size:13px;font-weight:700;letter-spacing:.22em;color:#ff7a7a;pointer-events:none;animation:obpulse 1.6s ease infinite">PAUSED</div>';
       else h += '<div style="width:8px;height:8px;border-radius:50%;background:'+V.dotColor+';box-shadow:0 0 14px '+V.dotColor+';pointer-events:none"></div>';
       if(V.isRolling) h += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:rgba(6,7,9,.75);pointer-events:none"><div style="font-size:12px;font-weight:700;letter-spacing:.24em;color:rgba(255,255,255,.75)">ROLLING… TAP TO SKIP</div></div>';
-      h += '</div>';
-      return h;
-    },
-    // vertical timer bar (2-column 3p layout): two clock copies rotated to face the
-    // left column (+90) and the single right player (-90)
-    barVHTML: function(V){
-      var clockStack = '<div style="display:flex;flex-direction:column;align-items:center;gap:3px;line-height:1;pointer-events:none">'
-        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockBig+'px;font-weight:800;color:'+V.clockColor+'">'+V.tMM+'</span><span style="font-size:'+V.clockMid+'px;font-weight:800;color:rgba(255,255,255,.55)">'+V.tSS+'</span></div>'
-        + '<div style="display:flex;flex-direction:column;align-items:center"><span style="font-size:'+V.clockSm+'px;font-weight:700;color:rgba(255,255,255,.45)">'+V.bMM+'</span><span style="font-size:'+V.clockSm2+'px;font-weight:700;color:rgba(255,255,255,.38)">'+V.bSS+'</span></div></div>';
-      var h = '<div id="bar" style="flex:none;width:'+V.barW+'px;align-self:stretch;border-radius:20px;background:'+V.barBg+';border:1px solid '+V.barBorder+';position:relative;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,.06);touch-action:none;overflow:hidden">';
-      h += '<div style="position:absolute;left:50%;top:'+V.clockInset+'px;transform:translate(-50%,-50%) rotate(90deg)">'+clockStack+'</div>';
-      h += '<div style="position:absolute;left:50%;bottom:'+V.clockInset+'px;transform:translate(-50%,50%) rotate(-90deg)">'+clockStack+'</div>';
-      if(V.paused) h += '<div style="font-size:13px;font-weight:700;letter-spacing:.22em;color:#ff7a7a;pointer-events:none;animation:obpulse 1.6s ease infinite;transform:rotate(90deg)">PAUSED</div>';
-      else h += '<div style="width:8px;height:8px;border-radius:50%;background:'+V.dotColor+';box-shadow:0 0 14px '+V.dotColor+';pointer-events:none"></div>';
-      if(V.isRolling) h += '<div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;border-radius:inherit;background:rgba(6,7,9,.75);pointer-events:none"><div style="font-size:12px;font-weight:700;letter-spacing:.2em;color:rgba(255,255,255,.75);transform:rotate(90deg)">ROLLING…</div></div>';
       h += '</div>';
       return h;
     },
@@ -1036,6 +1029,9 @@
       var saved = null;
       try{ saved = JSON.parse(localStorage.getItem(KEY)); }catch(e){}
       if(saved && saved.count){
+        // migrate the old shrink-the-lone-row default (61) to the balanced 100 so
+        // existing state picks up the aspect-ratio fix
+        if(saved.soloScale === 61) saved.soloScale = 100;
         this.state = Object.assign(this.fresh(saved.count), saved, { settingsOpen:false, confirmReset:false, openColorIdx:-1, copied:false, expanded:-1, addingFor:-1, newName:'', advOpen:false, installHelp:false });
       } else {
         this.state = this.fresh(5);
