@@ -421,7 +421,7 @@
         i:i, rot:rot, life:s.life[i],
         grad:grad, radius:radius,
         borderC: rolling ? 'rgba(255,255,255,.85)' : active ? this.rgba(baseColor,0.6) : black ? 'rgba(255,255,255,.3)' : this.rgba(baseColor,0.35),
-        spin: active, showNumber: !black,
+        spin: active, spinPct: Math.ceil(Math.sqrt(w*w + h*h) / w * 100), showNumber: !black,
         numSize: numSize, numColor: numColor,
         // continuous glow: two layers always present, blur + alpha scale linearly
         // with glow (0..2) so there is no jump anywhere (e.g. 100%→101%)
@@ -622,7 +622,7 @@
       var h = '<div data-box="'+box.i+'" data-rot="'+box.rot+'" style="flex:1 1 0%;position:relative;min-width:0;border-radius:'+box.radius+'px;background:linear-gradient('+box.grad+'),#0b0c0f;border:1px solid '+box.borderC+';overflow:hidden;touch-action:none">';
       if(box.spin){
         h += '<div style="position:absolute;inset:0;pointer-events:none;overflow:hidden;border-radius:'+box.radius+'px">'
-          + '<div style="position:absolute;left:50%;top:50%;width:230%;aspect-ratio:1;margin-left:-115%;margin-top:-115%;background:conic-gradient(#ff6d6d,#ffd45e,#69e29a,#7db8ff,#c792ff,#ff6d6d);animation:obspin 3.2s linear infinite"></div>'
+          + '<div style="position:absolute;left:50%;top:50%;width:'+box.spinPct+'%;aspect-ratio:1;margin-left:-'+(box.spinPct/2)+'%;margin-top:-'+(box.spinPct/2)+'%;background:conic-gradient(#ff6d6d,#ffd45e,#69e29a,#7db8ff,#c792ff,#ff6d6d);animation:obspin 3.2s linear infinite"></div>'
           + '<div style="position:absolute;inset:3px;border-radius:'+box.radius+'px;background:linear-gradient('+box.grad+'),#0b0c0f"></div></div>';
       }
       if(box.showNumber){
